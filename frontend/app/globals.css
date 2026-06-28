@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-ink text-slate-100 antialiased;
+  background-image:
+    radial-gradient(1200px 600px at 100% -10%, rgba(22, 214, 201, 0.06), transparent),
+    radial-gradient(900px 500px at -10% 10%, rgba(46, 155, 255, 0.07), transparent);
+  background-attachment: fixed;
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-white/5 bg-panel/80 shadow-card backdrop-blur;
+  }
+
+  .card-pad {
+    @apply p-5;
+  }
+
+  .label {
+    @apply text-xs font-medium uppercase tracking-wider text-slate-400;
+  }
+
+  .heading {
+    @apply text-2xl font-semibold tracking-tight text-white;
+  }
+
+  .subheading {
+    @apply text-sm text-slate-400;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm
+      font-medium transition focus:outline-none focus-visible:ring-2
+      focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn bg-accent text-navy-900 hover:bg-accent-soft;
+  }
+
+  .btn-ghost {
+    @apply btn border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10;
+  }
+
+  .nav-link {
+    @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium
+      text-slate-300 transition hover:bg-white/5 hover:text-white;
+  }
+
+  .nav-link-active {
+    @apply bg-accent/10 text-white ring-1 ring-inset ring-accent/30;
+  }
+
+  .table-base {
+    @apply w-full border-collapse text-sm;
+  }
+
+  .table-base th {
+    @apply border-b border-white/10 px-3 py-2 text-left text-xs font-semibold
+      uppercase tracking-wider text-slate-400;
+  }
+
+  .table-base td {
+    @apply border-b border-white/5 px-3 py-2.5 text-slate-200;
+  }
+}
+
+/* Recharts dark theming */
+.recharts-cartesian-grid line {
+  stroke: rgba(255, 255, 255, 0.06);
+}
+.recharts-text {
+  fill: #94a3b8;
+}
+.recharts-default-tooltip {
+  border-radius: 0.75rem !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background-color: #0e1b2e !important;
+}

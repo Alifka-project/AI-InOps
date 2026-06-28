@@ -1,0 +1,21 @@
+# Render Blueprint for the Digital Twin backend.
+# Build context is the repository root so the Dockerfile can copy both
+# `core/` and `backend/app/`.
+services:
+  - type: web
+    name: digital-twin-backend
+    runtime: docker
+    repo: https://github.com/Alifka-project/AI-InOps
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      # Set this to your deployed Vercel origin(s), comma-separated.
+      - key: CORS_ORIGINS
+        sync: false
