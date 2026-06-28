@@ -18,7 +18,14 @@ router = APIRouter(prefix="/api/forecast", tags=["forecast"])
 @router.post("/demand", response_model=ForecastResponse)
 def forecast_demand(req: ForecastRequest) -> ForecastResponse:
     return ForecastResponse(
-        **service.forecast_demand(req.scenario.value, req.alpha, req.beta, req.horizon)
+        **service.forecast_demand(
+            req.dataset.as_dict(),
+            req.scenario.value,
+            req.alpha,
+            req.beta,
+            req.horizon,
+            auto_tune=req.auto_tune,
+        )
     )
 
 
@@ -26,6 +33,10 @@ def forecast_demand(req: ForecastRequest) -> ForecastResponse:
 def forecast_suppliers(req: SupplierRequest) -> SupplierResponse:
     return SupplierResponse(
         **service.forecast_suppliers(
-            req.scenario.value, req.alpha, req.beta, req.horizon
+            req.dataset.as_dict(),
+            req.scenario.value,
+            req.alpha,
+            req.beta,
+            req.horizon,
         )
     )

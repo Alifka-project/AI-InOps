@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import type { Dataset } from "@/lib/types";
 import { useScenarioStore } from "@/store/useScenarioStore";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
@@ -20,33 +21,36 @@ import { Panel } from "@/components/Panel";
 import { DeltaBanner } from "@/components/DeltaBanner";
 import { AsyncBoundary } from "@/components/AsyncBoundary";
 import { CardSkeleton, KpiSkeletonRow } from "@/components/Skeleton";
+import { RequireDataset } from "@/components/RequireDataset";
+import { DownloadReportButton } from "@/components/DownloadReportButton";
 
 export default function OverviewPage() {
+  return (
+    <RequireDataset>
+      <OverviewBody />
+    </RequireDataset>
+  );
+}
+
+function OverviewBody() {
+  const dataset = useScenarioStore((s) => s.dataset) as Dataset;
   const scenario = useScenarioStore((s) => s.scenario);
   const settings = useScenarioStore((s) => s.settings);
-
-  const req = {
-    scenario,
-    alpha: settings.alpha,
-    beta: settings.beta,
-    horizon: settings.horizon,
-    service_level: settings.serviceLevel,
-  };
-
-  const sim = useApi(() => api.simulate(req), [
+  const key = [
+    dataset.meta.name,
     scenario,
     settings.alpha,
     settings.beta,
     settings.horizon,
     settings.serviceLevel,
-  ]);
+    settings.autoTune,
+  ];
 
-  const cmp = useApi(() => api.compareScenarios(req), [
-    settings.alpha,
-    settings.beta,
-    settings.horizon,
-    settings.serviceLevel,
-  ]);
+  const sim = useApi(() => api.simulate(dataset, scenario, settings), [...key]);
+  const cmp = useApi(
+    () => api.compareScenarios(dataset, settings),
+    [dataset.meta.name, settings.alpha, settings.beta, settings.horizon, settings.serviceLevel],
+  );
 
   const chartData =
     sim.data?.months.map((m, i) => ({
@@ -54,21 +58,17 @@ export default function OverviewPage() {
       actual: sim.data?.actual[i] ?? null,
       fitted: sim.data?.forecast_fitted[i] ?? null,
     })) ?? [];
-  const horizonStart = sim.data?.months.length ?? 0;
   const horizonData =
-    sim.data?.forecast_horizon.map((v, i) => ({
-      month: `+${i + 1}`,
-      forecast: v,
-    })) ?? [];
+    sim.data?.forecast_horizon.map((v, i) => ({ month: `+${i + 1}`, forecast: v })) ?? [];
 
   const k = sim.data?.kpis;
-  const cmpData = cmp.data;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Operations Overview"
-        description="A live snapshot of the Electrolux UAE recovery network under the selected scenario."
+        description={`Live snapshot of "${dataset.meta.name}" under the selected scenario.`}
+        actions={<DownloadReportButton variant="primary" />}
       />
 
       <AsyncBoundary
@@ -77,7 +77,7 @@ export default function OverviewPage() {
         onRetry={cmp.reload}
         skeleton={<CardSkeleton height="h-20" />}
       >
-        {cmpData && <DeltaBanner comparison={cmpData} scenario={scenario} />}
+        {cmp.data && <DeltaBanner comparison={cmp.data} scenario={scenario} />}
       </AsyncBoundary>
 
       <AsyncBoundary
@@ -89,8 +89,8 @@ export default function OverviewPage() {
         {k && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <KpiCard
-              label="Next-Month Demand"
-              value={`${fmtInt(k.next_month_demand)}`}
+              label="Next-Period Demand"
+              value={fmtInt(k.next_month_demand)}
               sublabel="planning units"
             />
             <KpiCard
@@ -110,7 +110,7 @@ export default function OverviewPage() {
             />
             <KpiCard
               label="Hubs Needing Reorder"
-              value={`${k.hubs_needing_reorder} / 3`}
+              value={`${k.hubs_needing_reorder} / ${dataset.meta.n_warehouses}`}
               accent={k.hubs_needing_reorder > 0 ? "warn" : "default"}
               sublabel={k.balanced ? "network balanced" : "network unbalanced"}
             />
@@ -125,8 +125,8 @@ export default function OverviewPage() {
         skeleton={<CardSkeleton />}
       >
         <Panel
-          title="Returned-Appliance Demand"
-          description="Historical volume with the in-sample adjusted exponential-smoothing fit."
+          title="Demand: Actual vs Forecast"
+          description="Historical sales with the in-sample adjusted exponential-smoothing fit."
         >
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -165,7 +165,7 @@ export default function OverviewPage() {
           </div>
           {horizonData.length > 0 && (
             <p className="mt-3 text-xs text-slate-400">
-              Forward {horizonData.length}-month forecast (from period {horizonStart}):{" "}
+              Forward {horizonData.length}-period forecast:{" "}
               <span className="font-mono text-accent">
                 {horizonData.map((h) => fmtInt(h.forecast)).join(" · ")}
               </span>{" "}

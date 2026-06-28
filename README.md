@@ -1,21 +1,61 @@
-# Digital Twin — Electrolux UAE Operations
+# Digital Twin — Logistics Software Management System
 
-A production-grade, full-stack **digital twin** for Electrolux UAE supply-chain
-and warehouse operations, focused on **sensitive-material supply resilience**
-(lithium, cobalt, silicon, aluminium, copper) during the **2026 Strait of Hormuz
-crisis**.
+A production-grade, full-stack **Digital Twin** for warehouse & supply-chain
+operations, built for the SP Jain *AI in Logistics* brief. Case study: **increased
+use of sensitive materials** (lithium, cobalt, silicon, aluminium, copper) and
+supply resilience during the **2026 Strait of Hormuz crisis**.
 
-A global **Scenario toggle** (Normal ↔ Hormuz Disruption) flows through every
-layer of the system. Under disruption: lead times extend by ~12 days, transport
-cost rises ×1.3 with an $85/t war-risk insurance surcharge, the Jebel Ali → KEZAD
-direct route is disabled (forcing a Gulf-of-Oman reroute), and recovered-material
-demand rises ×1.25 — flipping the transportation network from a supply surplus to
-a supply shortfall.
+The twin runs entirely on **your data**. You upload the eight data-augmentation
+inputs as CSVs; the system forecasts demand, forecasts supplier availability,
+optimises transportation, and recommends inventory policy — then lets you
+**download a full PDF report**. A global **Scenario toggle** (Normal ↔ Hormuz
+Disruption) is a what-if lens applied on top of the real data.
 
-> Built on a verified Operations-Research engine (`core/`): exponential &
-> trend-adjusted smoothing, linear/seasonal trend, the transportation simplex
-> (NWC / Least-Cost / Vogel → Stepping-Stone / MODI), supplier forecasting, and
-> EOQ/ROP/safety-stock inventory policy.
+> **No fabricated operational data in production.** Every operational number
+> (demand, stock, costs, capacities) comes from your uploads. Synthetic values
+> exist only behind a clearly-labelled **“Load sample dataset”** button for
+> demos and testing.
+
+---
+
+## How the brief maps to the system
+
+### Data-augmentation inputs (all eight required)
+
+| # | Brief category | CSV input | Key columns |
+|---|---|---|---|
+| 1 | Historical sales data | `sales` | period, label, sales |
+| 2 | Supplier data (lead time, capacity, pricing) | `suppliers` | supplier, lead_time_days, capacity_t, price_per_t |
+| 3 | Transportation costs and routes | `transport_costs` | source, destination, cost_per_t |
+| 4 | External factors (seasonality, promotions, trends) | `external` | period, seasonality_index, promotion, market_trend |
+| 5 | Inventory data (stock, capacity, replenishment) | `inventory` | warehouse, current_stock_t, storage_capacity_t, replenishment_rate_t |
+| 6 | Customer order data (frequency, size, location) | `orders` | order_id, period, size_t, location |
+| 7 | Warehouse layout / operational parameters | `warehouse_params` | parameter, value (ordering_cost, holding_cost_per_unit, service_level) |
+| 8 | Historical transportation data | `transport_history` | period, source, destination, volume_t, cost |
+| — | *Reference market prices (optional)* | `materials` | material, mass_share, value_per_t_usd |
+
+CSV headers are matched flexibly (case-insensitive, common synonyms). Every
+input has a downloadable template in the UI.
+
+### Methods (from the brief → engine)
+
+- **Demand forecasting:** Adjusted Exponential Smoothing, Linear Trend Line,
+  Seasonal Adjustment — textbook-exact recursions, **validated out-of-sample**
+  (held-out back-test) with optional **auto-tuning** of α/β by grid search to
+  minimise validation error.
+- **Supplier integration & forecasting:** availability forecast from each
+  supplier’s *historical* shipment volumes, capped by contractual capacity;
+  lead times, capacities, and pricing flow through.
+- **Transportation optimisation:** Northwest-Corner, Least-Cost, and Vogel
+  initial solutions improved by **Stepping-Stone** and **MODI**, handling
+  **balanced and unbalanced** problems via an automatic dummy row/column. All
+  six initial×optimality combinations are shown converging to the same optimum.
+- **Warehouse management:** safety stock, reorder point, and EOQ from your
+  demand, lead times, **real on-hand stock**, and **your operational
+  parameters** (ordering/holding cost, service level) — no hard-coded costs.
+- **Scalability & feedback:** the backend is **stateless** (the dataset travels
+  in each request, so it scales horizontally); parameter auto-tuning and
+  out-of-sample validation form the feedback loop the brief asks for.
 
 ---
 
@@ -23,86 +63,87 @@ a supply shortfall.
 
 ```
 Next.js 14 (App Router · TS strict · Tailwind · Recharts · Zustand)
-        │  HTTPS · typed fetch client (lib/api.ts)
+        │  upload CSVs → canonical dataset (held client-side, persisted)
+        │  HTTPS · typed fetch client; dataset travels in each request body
         ▼
 FastAPI (Python 3.11 · pydantic v2 · uvicorn)  ──▶  core/ engine (pure, stateless)
-        │                                              forecasting · transportation
-   Render web service                                  supplier · warehouse · metrics
-   Vercel hosts the frontend                           scenarios
+   stateless: no server-side dataset storage           dataset · forecasting
+   Render web service                                   supplier · transportation
+   Vercel hosts the frontend                            warehouse · scenarios · metrics
+        │
+        └─ /api/report → reportlab PDF (matplotlib charts)
 ```
 
 - The **frontend never reimplements algorithms** — it calls the API.
-- `core/` stays **pure and stateless**; the backend is a thin typed layer plus
-  scenario orchestration.
-- Configuration is **environment-only** (no secrets in code).
+- `core/` is **pure and stateless**; the backend is a thin typed layer.
+- Configuration is **environment-only**.
 
 ### Repository layout
 
 ```
 digital-twin-logistics/
-├── core/                  # verified OR engine (+ scenarios.py)
+├── core/                  # verified OR engine
+│   ├── dataset.py         # canonical schema, CSV parsing/validation (8 inputs)
+│   ├── forecasting.py     # ES / trend / seasonal + autotune + back-test
+│   ├── transportation.py  # NWC/LCM/VAM + Stepping-Stone/MODI (balanced/unbalanced)
+│   ├── supplier.py        # availability forecast from history
+│   ├── warehouse.py       # EOQ / ROP / safety stock from real params
+│   ├── scenarios.py       # Normal vs Hormuz-Disruption modifiers
+│   └── data_generator.py  # labelled SAMPLE dataset (only place synthetics live)
 ├── backend/               # FastAPI app, tests, Dockerfile, render.yaml
 │   └── app/
-│       ├── main.py        # app, routers, CORS, exception handlers, logging
-│       ├── config.py      # pydantic-settings (env)
-│       ├── models.py      # pydantic v2 request/response schemas
-│       ├── scenarios.py   # API adapter over core.scenarios
-│       ├── service.py     # orchestrates core/ calls per scenario
-│       └── routers/       # data · forecast · transport · warehouse · simulate
-├── frontend/              # Next.js dashboard (6 pages)
-│   ├── app/               # overview · forecasting · suppliers · transportation · warehouse · scenario
-│   ├── components/        # KPI cards, charts, matrix editor, scenario toggle, nav, skeletons
-│   ├── lib/               # api.ts (typed client) · types.ts · useApi · format
-│   ├── store/             # Zustand (scenario + forecast params)
-│   └── __tests__/         # vitest + React Testing Library
+│       ├── models.py      # pydantic v2 schemas incl. the canonical Dataset
+│       ├── service.py     # stateless orchestration over core/
+│       ├── report.py      # reportlab PDF report
+│       └── routers/       # datasets · data · forecast · transport · warehouse · simulate · report
+├── frontend/              # Next.js dashboard
+│   ├── app/               # data · overview · forecasting · suppliers · transportation · warehouse · scenario
+│   ├── components/        # upload cards, KPI cards, charts, matrix editor, report button …
+│   ├── lib/               # api.ts · types.ts · inputs.ts · useApi · format
+│   └── store/             # Zustand (dataset + scenario + params, persisted)
 ├── .github/workflows/ci.yml
 ├── verify.py  pipeline_demo.py
 ```
 
 ---
 
-## Live demo
+## Using the app
 
-| Surface  | URL                                              |
-| -------- | ------------------------------------------------ |
-| Frontend | _set after Vercel deploy_                         |
-| Backend  | _set after Render deploy_ (`/health`, `/docs`)   |
+1. Open **Data & Upload**. Either:
+   - **Upload** all eight CSVs (download a template per input for the exact
+     columns), name the dataset, and click **Validate & load**; or
+   - click **Load sample dataset** to explore with labelled synthetic data.
+2. Every page (Overview, Forecasting, Suppliers, Transportation, Warehouse,
+   Scenario) now analyses that dataset. Flip the **Scenario** toggle to see the
+   Hormuz-disruption impact ripple through.
+3. Click **Download report** (header or Overview) for a PDF of the full analysis.
 
-> Update these once deployed. The frontend keeps the backend warm with a
-> health-check ping every 4 minutes to mask free-tier cold starts.
+The dataset is held in the browser (persisted to `localStorage`) and sent with
+each request, so a refresh keeps your data and the backend stays stateless.
 
 ---
 
 ## Local development
 
 ### Prerequisites
-
-- Python 3.11 (3.9+ works locally; CI and Docker pin 3.11)
+- Python 3.11 (3.9+ works locally; CI/Docker pin 3.11)
 - Node.js 20+
 
-### 1. Backend
-
+### Backend
 ```bash
 cd digital-twin-logistics
 python -m venv .venv && source .venv/bin/activate
 pip install -r backend/requirements.txt
-
-# Frozen acceptance tests for the engine
-python verify.py
-python pipeline_demo.py
-
-# Run the API (http://localhost:8000 — docs at /docs)
-cd backend
-uvicorn app.main:app --reload
+python verify.py            # frozen acceptance tests for the engine
+cd backend && uvicorn app.main:app --reload   # http://localhost:8000 (docs at /docs)
 ```
 
-### 2. Frontend
-
+### Frontend
 ```bash
 cd frontend
 npm install
-cp .env.example .env.local          # NEXT_PUBLIC_API_URL=http://localhost:8000
-npm run dev                          # http://localhost:3000
+cp .env.example .env.local   # NEXT_PUBLIC_API_URL=http://localhost:8000
+npm run dev                  # http://localhost:3000
 ```
 
 ---
@@ -112,80 +153,53 @@ npm run dev                          # http://localhost:3000
 ```bash
 # Backend
 cd backend
-ruff check app ../core/scenarios.py
-black --check app ../core/scenarios.py
-python -m pytest                      # scenario math + every endpoint (TestClient)
+ruff check app ../core/scenarios.py ../core/dataset.py
+black --check app
+python -m pytest             # dataset parsing, scenario math, accuracy, every endpoint, PDF
 
 # Frontend
 cd frontend
-npm run lint
-npm run typecheck
-npm run test                          # vitest + RTL
-npm run build                         # production build
+npm run lint && npm run typecheck && npm run test && npm run build
 ```
 
-CI (`.github/workflows/ci.yml`) runs all of the above — plus `verify.py` — on
-every push and pull request to `main`.
+CI (`.github/workflows/ci.yml`) runs all of the above plus `verify.py` on every
+push/PR to `main`.
 
 ### Frozen acceptance results (never regress)
-
-- Exp. smoothing α=0.5 on `[37,40,41,37,45,50]` → F₁..F₄ = 37, 37, 38.5, 39.75
+- Exp. smoothing α=0.5 on `[37,40,41,37,45,50]` → 37, 37, 38.5, 39.75
 - Linear trend (same series) → a = 34.0667, b = 2.1714
-- Balanced transport (the 3×3 textbook problem) → **4525** for every
-  initial × optimality combination
+- Balanced transport (3×3 textbook) → **4525** for every method combination
 - Unbalanced supply > demand → **2424**; demand > supply → **1250**
 
 ---
 
-## API surface
+## API surface (stateless — POST bodies carry the dataset)
 
-All POST endpoints accept `scenario: "normal" | "hormuz_disruption"`.
-
-| Method & path                | Purpose                                                   |
-| ---------------------------- | --------------------------------------------------------- |
-| `GET  /health`               | Liveness probe                                            |
-| `GET  /api/data`             | Reference network + editable transport seeds              |
-| `GET  /api/scenarios`        | Scenario metadata                                         |
-| `POST /api/forecast/demand`  | Adjusted ES + linear trend + seasonal, with MAD/MSE/MAPE/Bias |
-| `POST /api/forecast/suppliers` | Collection-center availability vs capacity              |
-| `POST /api/optimize/transport` | Allocation, total cost, balanced/dummy info, method comparison |
-| `POST /api/warehouse/policy` | Safety stock / ROP / EOQ + OK/REORDER/CRITICAL status     |
-| `GET  /api/materials/recovery` | Recovered-material tonnage & value                      |
-| `POST /api/simulate`         | Full twin payload (powers the overview)                   |
-| `POST /api/simulate/compare` | Normal vs Disruption KPI deltas                           |
+| Method & path | Purpose |
+|---|---|
+| `GET  /health` | Liveness probe |
+| `POST /api/datasets/parse` | Parse & validate uploaded CSVs → canonical dataset |
+| `GET  /api/datasets/sample` | Labelled synthetic sample dataset |
+| `GET  /api/datasets/templates/{kind}` | CSV template for an input |
+| `POST /api/data` | Reference view + editable transport seeds |
+| `POST /api/forecast/demand` | 3 methods + metrics + auto-tune + out-of-sample validation |
+| `POST /api/forecast/suppliers` | Availability vs capacity from history |
+| `POST /api/optimize/transport` | Allocation, total cost, balanced/dummy, method comparison |
+| `POST /api/warehouse/policy` | Safety stock / ROP / EOQ + status from real stock |
+| `POST /api/materials/recovery` | Recovered-material tonnage & value |
+| `POST /api/simulate` · `/compare` | Full twin payload · Normal-vs-Disruption KPIs |
+| `POST /api/report` | Downloadable **PDF** report |
 
 ---
 
 ## Deployment
 
-### Backend → Render
+- **Backend → Render:** `backend/render.yaml` Blueprint + root-context
+  `backend/Dockerfile`. Set `CORS_ORIGINS` to your Vercel origin; health check `/health`.
+- **Frontend → Vercel:** import the repo, root directory `frontend`, set
+  `NEXT_PUBLIC_API_URL` to the Render URL.
 
-The repo ships `backend/render.yaml` (a Render Blueprint) and a root-context
-`backend/Dockerfile`.
-
-1. In Render: **New → Blueprint**, point it at this repository.
-2. Render reads `backend/render.yaml` and builds the Docker image (build context
-   is the repo root so it can copy both `core/` and `backend/app/`).
-3. Set `CORS_ORIGINS` to your Vercel origin (comma-separated). `/health` is the
-   health-check path.
-
-### Frontend → Vercel
-
-1. **New Project** → import this repo → set the **root directory** to `frontend`.
-2. Add env var `NEXT_PUBLIC_API_URL` = your Render backend URL (no trailing slash).
-3. Deploy. Next.js is detected automatically.
-
----
-
-## The Hormuz scenario, end to end
-
-| Layer           | Normal              | Hormuz Disruption                              |
-| --------------- | ------------------- | ---------------------------------------------- |
-| Supplier lead   | as contracted       | **+12 days** (Cape-of-Good-Hope reroute)       |
-| Transport cost  | base                | **×1.3 + $85/t** war-risk insurance            |
-| Routes          | all open            | Jebel Ali → KEZAD **disabled**                 |
-| Recovered demand| base                | **×1.25** (import substitution)                |
-| Network balance | supply surplus      | **supply shortfall** → dummy source appears    |
-
-Flip the toggle in the header and every page — KPIs, forecasts, supplier bars,
-the transportation allocation, and inventory status chips — recomputes live.
+| Surface | URL |
+| --- | --- |
+| Frontend | _set after Vercel deploy_ |
+| Backend | _set after Render deploy_ (`/health`, `/docs`) |

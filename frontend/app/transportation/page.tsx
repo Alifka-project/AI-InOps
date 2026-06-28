@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { Dataset, InitialMethod, OptimalityMethod, TransportResponse } from "@/lib/types";
 import { useScenarioStore } from "@/store/useScenarioStore";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
@@ -10,11 +11,7 @@ import { Panel } from "@/components/Panel";
 import { MatrixEditor } from "@/components/MatrixEditor";
 import { AsyncBoundary } from "@/components/AsyncBoundary";
 import { CardSkeleton } from "@/components/Skeleton";
-import type {
-  InitialMethod,
-  OptimalityMethod,
-  TransportResponse,
-} from "@/lib/types";
+import { RequireDataset } from "@/components/RequireDataset";
 
 const INITIAL_METHODS: { value: InitialMethod; label: string }[] = [
   { value: "nwc", label: "Northwest Corner" },
@@ -35,9 +32,18 @@ interface Matrix {
 }
 
 export default function TransportationPage() {
+  return (
+    <RequireDataset>
+      <TransportationBody />
+    </RequireDataset>
+  );
+}
+
+function TransportationBody() {
+  const dataset = useScenarioStore((s) => s.dataset) as Dataset;
   const scenario = useScenarioStore((s) => s.scenario);
 
-  const data = useApi(() => api.getData(scenario), [scenario]);
+  const data = useApi(() => api.getData(dataset, scenario), [dataset.meta.name, scenario]);
   const [matrix, setMatrix] = useState<Matrix | null>(null);
   const [initial, setInitial] = useState<InitialMethod>("vogel");
   const [optimize, setOptimize] = useState<OptimalityMethod>("modi");
@@ -46,8 +52,7 @@ export default function TransportationPage() {
   const [solving, setSolving] = useState(false);
   const [solveError, setSolveError] = useState<string | null>(null);
 
-  // Seed the editable matrix whenever fresh reference data arrives.
-  useEffect(() => {
+  const seed = useCallback(() => {
     if (!data.data) return;
     setMatrix({
       cost: data.data.transport_costs.map((r) => [...r]),
@@ -58,13 +63,16 @@ export default function TransportationPage() {
     });
   }, [data.data]);
 
+  useEffect(() => {
+    seed();
+  }, [seed]);
+
   const runOptimize = useCallback(
     async (m: Matrix, init: InitialMethod, opt: OptimalityMethod) => {
       setSolving(true);
       setSolveError(null);
       try {
-        const res = await api.optimizeTransport({
-          scenario,
+        const res = await api.optimizeTransport(dataset, scenario, {
           initial: init,
           optimize: opt,
           cost: m.cost,
@@ -73,17 +81,14 @@ export default function TransportationPage() {
         });
         setResult(res);
       } catch (err) {
-        setSolveError(
-          err instanceof ApiError ? err.message : "Optimization failed",
-        );
+        setSolveError(err instanceof ApiError ? err.message : "Optimization failed");
       } finally {
         setSolving(false);
       }
     },
-    [scenario],
+    [dataset, scenario],
   );
 
-  // Auto-solve when the matrix is (re)seeded or methods change.
   useEffect(() => {
     if (matrix) runOptimize(matrix, initial, optimize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -96,15 +101,10 @@ export default function TransportationPage() {
     <div className="space-y-6">
       <PageHeader
         title="Transportation Optimization"
-        description="Minimize shipping cost from collection centers to recycling hubs. Edit the matrix and compare methods."
+        description="Minimize shipping cost from suppliers to warehouses. Edit the matrix and compare methods; the scenario applies freight modifiers live."
       />
 
-      <AsyncBoundary
-        loading={data.loading}
-        error={data.error}
-        onRetry={data.reload}
-        skeleton={<CardSkeleton />}
-      >
+      <AsyncBoundary loading={data.loading} error={data.error} onRetry={data.reload} skeleton={<CardSkeleton />}>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
           <Panel
             title="Cost / Supply / Demand"
@@ -142,19 +142,7 @@ export default function TransportationPage() {
               />
             )}
             <div className="mt-4 flex flex-wrap gap-3">
-              <button
-                className="btn-ghost"
-                onClick={() => {
-                  if (data.data)
-                    setMatrix({
-                      cost: data.data.transport_costs.map((r) => [...r]),
-                      supply: [...data.data.transport_supply],
-                      demand: [...data.data.transport_demand],
-                      rowLabels: data.data.center_names,
-                      colLabels: data.data.hub_names,
-                    });
-                }}
-              >
+              <button className="btn-ghost" onClick={seed}>
                 Reset to scenario defaults
               </button>
               <button
@@ -176,9 +164,7 @@ export default function TransportationPage() {
                     <button
                       key={m.value}
                       onClick={() => setInitial(m.value)}
-                      className={`btn ${
-                        initial === m.value ? "btn-primary" : "btn-ghost"
-                      }`}
+                      className={`btn ${initial === m.value ? "btn-primary" : "btn-ghost"}`}
                     >
                       {m.label}
                     </button>
@@ -192,9 +178,7 @@ export default function TransportationPage() {
                     <button
                       key={m.value}
                       onClick={() => setOptimize(m.value)}
-                      className={`btn ${
-                        optimize === m.value ? "btn-primary" : "btn-ghost"
-                      }`}
+                      className={`btn ${optimize === m.value ? "btn-primary" : "btn-ghost"}`}
                     >
                       {m.label}
                     </button>
@@ -207,9 +191,7 @@ export default function TransportationPage() {
                   <div>
                     <p className="label">Optimal total cost</p>
                     <p className="text-2xl font-semibold text-accent">
-                      {result.total_cost.toLocaleString("en-US", {
-                        maximumFractionDigits: 0,
-                      })}
+                      {result.total_cost.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -230,9 +212,7 @@ export default function TransportationPage() {
                   </div>
                 </div>
               )}
-              {solveError && (
-                <p className="text-sm text-rose-300">{solveError}</p>
-              )}
+              {solveError && <p className="text-sm text-rose-300">{solveError}</p>}
             </div>
           </Panel>
         </div>
@@ -251,10 +231,7 @@ export default function TransportationPage() {
                     From \ To
                   </th>
                   {result.col_labels.map((c, j) => (
-                    <th
-                      key={j}
-                      className="px-3 py-1.5 text-center text-xs font-semibold text-electric"
-                    >
+                    <th key={j} className="px-3 py-1.5 text-center text-xs font-semibold text-electric">
                       {c}
                     </th>
                   ))}
@@ -270,9 +247,7 @@ export default function TransportationPage() {
                       <td
                         key={j}
                         className={`px-3 py-1.5 text-center font-mono ${
-                          q > 0
-                            ? "rounded-md bg-accent/10 text-accent"
-                            : "text-slate-600"
+                          q > 0 ? "rounded-md bg-accent/10 text-accent" : "text-slate-600"
                         }`}
                       >
                         {q > 0 ? fmtNum(q) : "·"}
@@ -287,19 +262,14 @@ export default function TransportationPage() {
       )}
 
       {result && (
-        <Panel
-          title="Method Convergence"
-          description="Every initial × optimality combination should reach the same optimum."
-        >
+        <Panel title="Method Convergence" description="Every initial × optimality combination should reach the same optimum.">
           <div className="mb-3 flex items-center gap-2">
             {result.all_methods_agree ? (
               <span className="chip bg-emerald-500/15 text-emerald-300">
                 ✓ all 6 methods agree on {fmtUsdCompact(result.total_cost)}
               </span>
             ) : (
-              <span className="chip bg-rose-500/15 text-rose-300">
-                methods disagree — check inputs
-              </span>
+              <span className="chip bg-rose-500/15 text-rose-300">methods disagree — check inputs</span>
             )}
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -312,9 +282,7 @@ export default function TransportationPage() {
                   {c.initial} + {c.optimize}
                 </span>
                 <span className="font-mono text-sm font-semibold text-white">
-                  {c.total_cost.toLocaleString("en-US", {
-                    maximumFractionDigits: 0,
-                  })}
+                  {c.total_cost.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                 </span>
               </div>
             ))}

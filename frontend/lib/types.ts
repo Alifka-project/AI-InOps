@@ -4,6 +4,102 @@ export type ScenarioName = "normal" | "hormuz_disruption";
 export type InitialMethod = "nwc" | "least_cost" | "vogel";
 export type OptimalityMethod = "modi" | "stepping_stone";
 
+// --------------------------------------------------------------------------
+// Canonical dataset (built from the user's uploaded CSVs)
+// --------------------------------------------------------------------------
+export interface DatasetMeta {
+  name: string;
+  is_sample: boolean;
+  n_periods: number;
+  n_suppliers: number;
+  n_warehouses: number;
+  n_orders: number;
+  warnings: string[];
+}
+
+export interface SalesRow {
+  period: number;
+  label: string;
+  sales: number;
+}
+export interface SupplierRow {
+  supplier: string;
+  lead_time_days: number;
+  capacity_t: number;
+  price_per_t: number;
+}
+export interface InventoryRow {
+  warehouse: string;
+  current_stock_t: number;
+  storage_capacity_t: number;
+  replenishment_rate_t: number;
+}
+export interface ExternalRow {
+  period: number;
+  seasonality_index: number;
+  promotion: number;
+  market_trend: number;
+}
+export interface OrderRow {
+  order_id: string;
+  period: number;
+  size_t: number;
+  location: string;
+}
+export interface HistoryRow {
+  period: number;
+  source: string;
+  destination: string;
+  volume_t: number;
+  cost: number;
+}
+export interface MaterialRefRow {
+  material: string;
+  mass_share: number;
+  value_per_t_usd: number;
+}
+export interface TransportCostsBlock {
+  sources: string[];
+  destinations: string[];
+  matrix: (number | null)[][];
+}
+
+export interface Dataset {
+  meta: DatasetMeta;
+  sales: SalesRow[];
+  suppliers: SupplierRow[];
+  inventory: InventoryRow[];
+  external: ExternalRow[];
+  orders: OrderRow[];
+  transport_costs: TransportCostsBlock;
+  transport_history: HistoryRow[];
+  warehouse_params: Record<string, number>;
+  materials: MaterialRefRow[];
+}
+
+export interface ValidationResponse {
+  ok: boolean;
+  dataset: Dataset | null;
+  errors: string[];
+  warnings: string[];
+}
+
+// The eight required input categories (+ optional materials).
+export const INPUT_KINDS = [
+  "sales",
+  "suppliers",
+  "transport_costs",
+  "external",
+  "inventory",
+  "orders",
+  "warehouse_params",
+  "transport_history",
+] as const;
+export type InputKind = (typeof INPUT_KINDS)[number];
+
+// --------------------------------------------------------------------------
+// Scenario metadata
+// --------------------------------------------------------------------------
 export interface ScenarioInfo {
   name: ScenarioName;
   label: string;
@@ -15,19 +111,36 @@ export interface ScenarioInfo {
   recovered_demand_multiplier: number;
 }
 
+// --------------------------------------------------------------------------
+// Forecasting
+// --------------------------------------------------------------------------
 export interface Metrics {
   MAD: number;
   MSE: number;
   MAPE: number;
   Bias: number;
 }
-
 export interface Series {
   name: string;
   fitted: number[];
   metrics: Metrics | null;
 }
-
+export interface Tuning {
+  alpha: number;
+  beta: number;
+  train_mad: number;
+  validation_mad: number;
+  holdout: number;
+  grid_size: number;
+}
+export interface Validation {
+  holdout: number;
+  train_size: number;
+  predictions: number[];
+  actuals: number[];
+  mad: number;
+  mape: number;
+}
 export interface ForecastResponse {
   scenario: ScenarioInfo;
   months: string[];
@@ -40,8 +153,17 @@ export interface ForecastResponse {
   next_forecast: number;
   planning_demand_next: number;
   recovered_demand_multiplier: number;
+  external_factor: number;
+  alpha: number;
+  beta: number;
+  auto_tuned: boolean;
+  tuning: Tuning | null;
+  validation: Validation;
 }
 
+// --------------------------------------------------------------------------
+// Suppliers
+// --------------------------------------------------------------------------
 export interface SupplierAvailability {
   center: string;
   lead_time_days: number;
@@ -52,7 +174,6 @@ export interface SupplierAvailability {
   capacity_utilization: number;
   horizon_forecast: number[];
 }
-
 export interface SupplierResponse {
   scenario: ScenarioInfo;
   suppliers: SupplierAvailability[];
@@ -61,12 +182,14 @@ export interface SupplierResponse {
   lead_time_add_days: number;
 }
 
+// --------------------------------------------------------------------------
+// Transportation
+// --------------------------------------------------------------------------
 export interface TransportComparisonRow {
   initial: string;
   optimize: string;
   total_cost: number;
 }
-
 export interface TransportResponse {
   scenario: ScenarioInfo;
   method: string;
@@ -83,6 +206,9 @@ export interface TransportResponse {
   all_methods_agree: boolean;
 }
 
+// --------------------------------------------------------------------------
+// Warehouse
+// --------------------------------------------------------------------------
 export interface HubPolicy {
   hub: string;
   current_stock: number;
@@ -91,17 +217,23 @@ export interface HubPolicy {
   eoq: number;
   suggested_order: number;
   status: "OK" | "REORDER" | "CRITICAL";
+  storage_capacity: number | null;
+  utilization: number | null;
 }
-
 export interface WarehouseResponse {
   scenario: ScenarioInfo;
   policies: HubPolicy[];
   forecast_demand: number;
   avg_lead_time_days: number;
   service_level: number;
+  ordering_cost: number;
+  holding_cost_per_unit: number;
   hubs_needing_reorder: number;
 }
 
+// --------------------------------------------------------------------------
+// Materials
+// --------------------------------------------------------------------------
 export interface MaterialRecovery {
   material: string;
   mass_share: number;
@@ -109,14 +241,17 @@ export interface MaterialRecovery {
   value_per_t_usd: number;
   value_usd: number;
 }
-
 export interface MaterialsResponse {
   scenario: ScenarioInfo;
   processed_t: number;
   materials: MaterialRecovery[];
   total_value_usd: number;
+  enabled: boolean;
 }
 
+// --------------------------------------------------------------------------
+// KPIs / simulate
+// --------------------------------------------------------------------------
 export interface Kpis {
   next_month_demand: number;
   optimal_transport_cost: number;
@@ -127,7 +262,6 @@ export interface Kpis {
   total_demand_t: number;
   balanced: boolean;
 }
-
 export interface SimulateResponse {
   scenario: ScenarioInfo;
   kpis: Kpis;
@@ -136,21 +270,18 @@ export interface SimulateResponse {
   forecast_fitted: number[];
   forecast_horizon: number[];
 }
-
 export interface ScenarioComparison {
   normal: Kpis;
   hormuz_disruption: Kpis;
 }
 
-export interface DemandPoint {
-  date: string;
-  month: string;
-  returned_units: number;
-}
-
+// --------------------------------------------------------------------------
+// Reference data view
+// --------------------------------------------------------------------------
 export interface DataResponse {
   scenario: ScenarioInfo;
-  demand: DemandPoint[];
+  meta: DatasetMeta;
+  demand: { date: string; month: string; returned_units: number }[];
   centers: {
     center: string;
     lead_time_days: number;
@@ -166,34 +297,13 @@ export interface DataResponse {
   hub_names: string[];
 }
 
-// Request param shapes.
-export interface ForecastParams {
-  scenario: ScenarioName;
+// --------------------------------------------------------------------------
+// Request param shapes
+// --------------------------------------------------------------------------
+export interface AnalysisParams {
   alpha: number;
   beta: number;
   horizon: number;
-}
-
-export interface TransportRequest {
-  scenario: ScenarioName;
-  initial: InitialMethod;
-  optimize: OptimalityMethod;
-  cost?: number[][];
-  supply?: number[];
-  demand?: number[];
-}
-
-export interface WarehouseRequest {
-  scenario: ScenarioName;
-  alpha: number;
-  beta: number;
-  service_level: number;
-}
-
-export interface SimulateRequest {
-  scenario: ScenarioName;
-  alpha: number;
-  beta: number;
-  horizon: number;
-  service_level: number;
+  serviceLevel: number;
+  autoTune: boolean;
 }

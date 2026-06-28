@@ -14,6 +14,10 @@ router = APIRouter(prefix="/api/warehouse", tags=["warehouse"])
 def warehouse_policy(req: WarehouseRequest) -> WarehouseResponse:
     return WarehouseResponse(
         **service.warehouse_policy(
-            req.scenario.value, req.alpha, req.beta, req.service_level
+            req.dataset.as_dict(),
+            req.scenario.value,
+            req.alpha,
+            req.beta,
+            req.service_level,
         )
     )

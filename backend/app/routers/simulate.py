@@ -18,7 +18,13 @@ router = APIRouter(prefix="/api", tags=["simulate"])
 def simulate(req: SimulateRequest) -> SimulateResponse:
     return SimulateResponse(
         **service.simulate(
-            req.scenario.value, req.alpha, req.beta, req.horizon, req.service_level
+            req.dataset.as_dict(),
+            req.scenario.value,
+            req.alpha,
+            req.beta,
+            req.horizon,
+            req.service_level,
+            auto_tune=req.auto_tune,
         )
     )
 
@@ -26,5 +32,11 @@ def simulate(req: SimulateRequest) -> SimulateResponse:
 @router.post("/simulate/compare", response_model=ScenarioComparison)
 def compare(req: SimulateRequest) -> ScenarioComparison:
     return ScenarioComparison(
-        **service.compare_scenarios(req.alpha, req.beta, req.horizon, req.service_level)
+        **service.compare_scenarios(
+            req.dataset.as_dict(),
+            req.alpha,
+            req.beta,
+            req.horizon,
+            req.service_level,
+        )
     )

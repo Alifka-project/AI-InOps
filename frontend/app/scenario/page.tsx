@@ -1,20 +1,15 @@
 "use client";
 
+import type { Dataset, Kpis } from "@/lib/types";
 import { useScenarioStore } from "@/store/useScenarioStore";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
-import {
-  deltaPct,
-  fmtInt,
-  fmtPct,
-  fmtUsd,
-  fmtUsdCompact,
-} from "@/lib/format";
+import { deltaPct, fmtInt, fmtPct, fmtUsd, fmtUsdCompact } from "@/lib/format";
 import { PageHeader } from "@/components/PageHeader";
 import { Panel } from "@/components/Panel";
 import { AsyncBoundary } from "@/components/AsyncBoundary";
 import { CardSkeleton } from "@/components/Skeleton";
-import type { Kpis } from "@/lib/types";
+import { RequireDataset } from "@/components/RequireDataset";
 
 interface RowDef {
   label: string;
@@ -24,87 +19,43 @@ interface RowDef {
 }
 
 const ROWS: RowDef[] = [
-  {
-    label: "Next-month planning demand",
-    pick: (k) => k.next_month_demand,
-    format: (n) => `${fmtInt(n)} u`,
-    goodWhenUp: false,
-  },
-  {
-    label: "Optimal transport cost",
-    pick: (k) => k.optimal_transport_cost,
-    format: fmtUsd,
-    goodWhenUp: false,
-  },
-  {
-    label: "Avg supplier utilization",
-    pick: (k) => k.avg_supplier_utilization,
-    format: (n) => fmtPct(n),
-    goodWhenUp: true,
-  },
-  {
-    label: "Recovered-material value",
-    pick: (k) => k.recovered_material_value,
-    format: fmtUsd,
-    goodWhenUp: true,
-  },
-  {
-    label: "Hubs needing reorder",
-    pick: (k) => k.hubs_needing_reorder,
-    format: (n) => `${n}`,
-    goodWhenUp: false,
-  },
-  {
-    label: "Total available supply",
-    pick: (k) => k.total_available_t,
-    format: (n) => `${fmtInt(n)} t`,
-    goodWhenUp: true,
-  },
-  {
-    label: "Total network demand",
-    pick: (k) => k.total_demand_t,
-    format: (n) => `${fmtInt(n)} t`,
-    goodWhenUp: false,
-  },
+  { label: "Next-period planning demand", pick: (k) => k.next_month_demand, format: (n) => `${fmtInt(n)} u`, goodWhenUp: false },
+  { label: "Optimal transport cost", pick: (k) => k.optimal_transport_cost, format: fmtUsd, goodWhenUp: false },
+  { label: "Avg supplier utilization", pick: (k) => k.avg_supplier_utilization, format: (n) => fmtPct(n), goodWhenUp: true },
+  { label: "Recovered-material value", pick: (k) => k.recovered_material_value, format: fmtUsd, goodWhenUp: true },
+  { label: "Hubs needing reorder", pick: (k) => k.hubs_needing_reorder, format: (n) => `${n}`, goodWhenUp: false },
+  { label: "Total available supply", pick: (k) => k.total_available_t, format: (n) => `${fmtInt(n)} t`, goodWhenUp: true },
+  { label: "Total network demand", pick: (k) => k.total_demand_t, format: (n) => `${fmtInt(n)} t`, goodWhenUp: false },
 ];
 
-function DeltaCell({
-  delta,
-  goodWhenUp,
-}: {
-  delta: number;
-  goodWhenUp: boolean;
-}) {
-  if (Math.abs(delta) < 0.0005)
-    return <span className="text-slate-500">—</span>;
+export default function ScenarioPage() {
+  return (
+    <RequireDataset>
+      <ScenarioBody />
+    </RequireDataset>
+  );
+}
+
+function DeltaCell({ delta, goodWhenUp }: { delta: number; goodWhenUp: boolean }) {
+  if (Math.abs(delta) < 0.0005) return <span className="text-slate-500">—</span>;
   const up = delta > 0;
   const good = up === goodWhenUp;
   return (
-    <span
-      className={`font-mono font-semibold ${
-        good ? "text-emerald-300" : "text-rose-300"
-      }`}
-    >
+    <span className={`font-mono font-semibold ${good ? "text-emerald-300" : "text-rose-300"}`}>
       {up ? "▲ +" : "▼ "}
       {fmtPct(delta)}
     </span>
   );
 }
 
-export default function ScenarioPage() {
+function ScenarioBody() {
+  const dataset = useScenarioStore((s) => s.dataset) as Dataset;
   const settings = useScenarioStore((s) => s.settings);
   const setScenario = useScenarioStore((s) => s.setScenario);
 
   const cmp = useApi(
-    () =>
-      api.compareScenarios({
-        scenario: "normal",
-        alpha: settings.alpha,
-        beta: settings.beta,
-        horizon: settings.horizon,
-        service_level: settings.serviceLevel,
-      }),
-    [settings.alpha, settings.beta, settings.horizon, settings.serviceLevel],
+    () => api.compareScenarios(dataset, settings),
+    [dataset.meta.name, settings.alpha, settings.beta, settings.horizon, settings.serviceLevel],
   );
 
   const n = cmp.data?.normal;
@@ -114,38 +65,28 @@ export default function ScenarioPage() {
     <div className="space-y-6">
       <PageHeader
         title="Scenario Comparison"
-        description="Side-by-side resilience impact of the 2026 Strait of Hormuz disruption versus normal operations."
+        description="Side-by-side resilience impact of the 2026 Strait of Hormuz disruption versus normal operations, on your data."
       />
 
       <div className="card card-pad">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-slate-300">
-            The disruption applies <strong>+12 day</strong> lead times, a{" "}
-            <strong>×1.3</strong> freight multiplier plus an{" "}
-            <strong>$85/t</strong> war-risk surcharge, disables the Jebel Ali →
-            KEZAD direct route, and lifts recovered-material demand{" "}
-            <strong>×1.25</strong>.
+            The disruption applies <strong>+12 day</strong> lead times, a <strong>×1.3</strong>{" "}
+            freight multiplier plus an <strong>$85/t</strong> war-risk surcharge, disables the first
+            direct route, and lifts recovered-material demand <strong>×1.25</strong>.
           </p>
           <div className="flex gap-2">
             <button className="btn-ghost" onClick={() => setScenario("normal")}>
               View Normal
             </button>
-            <button
-              className="btn-primary"
-              onClick={() => setScenario("hormuz_disruption")}
-            >
+            <button className="btn-primary" onClick={() => setScenario("hormuz_disruption")}>
               View Disruption
             </button>
           </div>
         </div>
       </div>
 
-      <AsyncBoundary
-        loading={cmp.loading}
-        error={cmp.error}
-        onRetry={cmp.reload}
-        skeleton={<CardSkeleton />}
-      >
+      <AsyncBoundary loading={cmp.loading} error={cmp.error} onRetry={cmp.reload} skeleton={<CardSkeleton />}>
         {n && d && (
           <Panel title="KPI Deltas" description="Normal → Hormuz Disruption">
             <div className="overflow-x-auto">
@@ -165,17 +106,10 @@ export default function ScenarioPage() {
                     return (
                       <tr key={row.label}>
                         <td className="font-medium text-white">{row.label}</td>
-                        <td className="text-right font-mono text-slate-300">
-                          {row.format(nv)}
-                        </td>
-                        <td className="text-right font-mono text-white">
-                          {row.format(dv)}
-                        </td>
+                        <td className="text-right font-mono text-slate-300">{row.format(nv)}</td>
+                        <td className="text-right font-mono text-white">{row.format(dv)}</td>
                         <td className="text-right">
-                          <DeltaCell
-                            delta={deltaPct(dv, nv)}
-                            goodWhenUp={row.goodWhenUp}
-                          />
+                          <DeltaCell delta={deltaPct(dv, nv)} goodWhenUp={row.goodWhenUp} />
                         </td>
                       </tr>
                     );
@@ -187,12 +121,7 @@ export default function ScenarioPage() {
         )}
       </AsyncBoundary>
 
-      <AsyncBoundary
-        loading={cmp.loading}
-        error={cmp.error}
-        onRetry={cmp.reload}
-        skeleton={<CardSkeleton height="h-24" />}
-      >
+      <AsyncBoundary loading={cmp.loading} error={cmp.error} onRetry={cmp.reload} skeleton={<CardSkeleton height="h-24" />}>
         {n && d && (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <SummaryCard
@@ -229,19 +158,10 @@ function SummaryCard({
   value: string;
   balanced: boolean;
 }) {
-  const ring =
-    accent === "rose"
-      ? "ring-1 ring-inset ring-rose-500/30"
-      : "ring-1 ring-inset ring-accent/30";
+  const ring = accent === "rose" ? "ring-1 ring-inset ring-rose-500/30" : "ring-1 ring-inset ring-accent/30";
   return (
     <div className={`card card-pad ${ring}`}>
-      <p
-        className={`font-semibold ${
-          accent === "rose" ? "text-rose-300" : "text-accent"
-        }`}
-      >
-        {title}
-      </p>
+      <p className={`font-semibold ${accent === "rose" ? "text-rose-300" : "text-accent"}`}>{title}</p>
       <div className="mt-3 grid grid-cols-2 gap-4">
         <div>
           <p className="label">Transport cost</p>

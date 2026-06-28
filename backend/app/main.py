@@ -16,7 +16,15 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import get_settings
 from .models import HealthResponse
-from .routers import data, forecast, simulate, transport, warehouse
+from .routers import (
+    data,
+    datasets,
+    forecast,
+    report,
+    simulate,
+    transport,
+    warehouse,
+)
 
 settings = get_settings()
 
@@ -147,8 +155,10 @@ def root() -> dict:
     }
 
 
+app.include_router(datasets.router)
 app.include_router(data.router)
 app.include_router(forecast.router)
 app.include_router(transport.router)
 app.include_router(warehouse.router)
 app.include_router(simulate.router)
+app.include_router(report.router)

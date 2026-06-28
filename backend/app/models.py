@@ -1,14 +1,14 @@
-"""Pydantic v2 request/response schemas for every endpoint.
+"""Pydantic v2 request/response schemas.
 
-These models are the single typed contract between the FastAPI backend and the
-Next.js client (mirrored in ``frontend/lib/types.ts``). Validation lives here:
-parameter ranges, non-negativity, and matrix-shape consistency.
+The typed contract between the FastAPI backend and the Next.js client, mirrored
+in ``frontend/lib/types.ts``. Every compute request carries the canonical
+dataset (built from the user's uploaded CSVs), so the backend is stateless.
 """
 
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -53,54 +53,105 @@ class ScenarioInfo(BaseModel):
 
 
 # --------------------------------------------------------------------------
-# Reference data
+# Canonical dataset (mirrors core.dataset output)
 # --------------------------------------------------------------------------
-class CenterModel(BaseModel):
-    center: str
+class DatasetMeta(BaseModel):
+    name: str
+    is_sample: bool = False
+    n_periods: int = 0
+    n_suppliers: int = 0
+    n_warehouses: int = 0
+    n_orders: int = 0
+    warnings: List[str] = Field(default_factory=list)
+
+
+class SalesRow(BaseModel):
+    period: int
+    label: str
+    sales: float
+
+
+class SupplierRow(BaseModel):
+    supplier: str
     lead_time_days: int
-    monthly_capacity_t: int
-    gate_fee_per_t: int
+    capacity_t: float
+    price_per_t: float
 
 
-class HubModel(BaseModel):
-    hub: str
-    processing_demand_t: float
-    recovery_yield: float
+class InventoryRow(BaseModel):
+    warehouse: str
+    current_stock_t: float
+    storage_capacity_t: float
+    replenishment_rate_t: float
 
 
-class MaterialModel(BaseModel):
+class ExternalRow(BaseModel):
+    period: int
+    seasonality_index: float
+    promotion: float
+    market_trend: float
+
+
+class OrderRow(BaseModel):
+    order_id: str
+    period: int
+    size_t: float
+    location: str
+
+
+class HistoryRow(BaseModel):
+    period: int
+    source: str
+    destination: str
+    volume_t: float
+    cost: float
+
+
+class MaterialRefRow(BaseModel):
     material: str
     mass_share: float
     value_per_t_usd: float
 
 
-class DemandPoint(BaseModel):
-    date: str
-    month: str
-    returned_units: int
+class TransportCosts(BaseModel):
+    sources: List[str]
+    destinations: List[str]
+    matrix: List[List[Optional[float]]]
 
 
-class DataResponse(BaseModel):
-    scenario: ScenarioInfo
-    demand: List[DemandPoint]
-    centers: List[CenterModel]
-    hubs: List[HubModel]
-    materials: List[MaterialModel]
-    transport_costs: List[List[float]]
-    transport_supply: List[float]
-    transport_demand: List[float]
-    center_names: List[str]
-    hub_names: List[str]
+class Dataset(BaseModel):
+    meta: DatasetMeta
+    sales: List[SalesRow]
+    suppliers: List[SupplierRow]
+    inventory: List[InventoryRow]
+    external: List[ExternalRow]
+    orders: List[OrderRow]
+    transport_costs: TransportCosts
+    transport_history: List[HistoryRow]
+    warehouse_params: Dict[str, float]
+    materials: List[MaterialRefRow] = Field(default_factory=list)
+
+    def as_dict(self) -> dict:
+        return self.model_dump()
+
+
+class ValidationResponse(BaseModel):
+    ok: bool
+    dataset: Optional[Dataset] = None
+    errors: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------
 # Forecasting — demand
 # --------------------------------------------------------------------------
 class ForecastRequest(BaseModel):
+    dataset: Dataset
     scenario: ScenarioName = ScenarioName.normal
-    alpha: float = Field(0.5, gt=0.0, le=1.0, description="Smoothing constant (0,1].")
-    beta: float = Field(0.3, ge=0.0, le=1.0, description="Trend smoothing [0,1].")
-    horizon: int = Field(3, ge=1, le=24, description="Periods to forecast ahead.")
+    alpha: float = Field(0.5, gt=0.0, le=1.0)
+    beta: float = Field(0.3, ge=0.0, le=1.0)
+    horizon: int = Field(6, ge=1, le=24)
+    auto_tune: bool = False
 
 
 class MetricsModel(BaseModel):
@@ -116,6 +167,24 @@ class SeriesModel(BaseModel):
     metrics: Optional[MetricsModel] = None
 
 
+class TuningModel(BaseModel):
+    alpha: float
+    beta: float
+    train_mad: float
+    validation_mad: float
+    holdout: int
+    grid_size: int
+
+
+class ValidationModel(BaseModel):
+    holdout: int
+    train_size: int
+    predictions: List[float]
+    actuals: List[float]
+    mad: float
+    mape: float
+
+
 class ForecastResponse(BaseModel):
     scenario: ScenarioInfo
     months: List[str]
@@ -128,12 +197,19 @@ class ForecastResponse(BaseModel):
     next_forecast: float
     planning_demand_next: float
     recovered_demand_multiplier: float
+    external_factor: float
+    alpha: float
+    beta: float
+    auto_tuned: bool
+    tuning: Optional[TuningModel] = None
+    validation: ValidationModel
 
 
 # --------------------------------------------------------------------------
 # Forecasting — suppliers
 # --------------------------------------------------------------------------
 class SupplierRequest(BaseModel):
+    dataset: Dataset
     scenario: ScenarioName = ScenarioName.normal
     alpha: float = Field(0.4, gt=0.0, le=1.0)
     beta: float = Field(0.3, ge=0.0, le=1.0)
@@ -163,16 +239,13 @@ class SupplierResponse(BaseModel):
 # Transportation
 # --------------------------------------------------------------------------
 class TransportRequest(BaseModel):
+    dataset: Dataset
     scenario: ScenarioName = ScenarioName.normal
     initial: InitialMethod = InitialMethod.vogel
     optimize: OptimalityMethod = OptimalityMethod.modi
-    cost: Optional[List[List[float]]] = Field(
-        None, description="Custom unit-cost matrix (centers x hubs)."
-    )
-    supply: Optional[List[float]] = Field(None, description="Custom supply per source.")
-    demand: Optional[List[float]] = Field(
-        None, description="Custom demand per destination."
-    )
+    cost: Optional[List[List[float]]] = None
+    supply: Optional[List[float]] = None
+    demand: Optional[List[float]] = None
 
     @model_validator(mode="after")
     def _check_shapes(self) -> "TransportRequest":
@@ -221,10 +294,11 @@ class TransportResponse(BaseModel):
 # Warehouse
 # --------------------------------------------------------------------------
 class WarehouseRequest(BaseModel):
+    dataset: Dataset
     scenario: ScenarioName = ScenarioName.normal
     alpha: float = Field(0.4, gt=0.0, le=1.0)
     beta: float = Field(0.3, ge=0.0, le=1.0)
-    service_level: float = Field(0.95, gt=0.5, lt=1.0)
+    service_level: Optional[float] = Field(None, gt=0.5, lt=1.0)
 
 
 class HubPolicy(BaseModel):
@@ -235,6 +309,8 @@ class HubPolicy(BaseModel):
     eoq: float
     suggested_order: float
     status: str
+    storage_capacity: Optional[float] = None
+    utilization: Optional[float] = None
 
 
 class WarehouseResponse(BaseModel):
@@ -243,6 +319,8 @@ class WarehouseResponse(BaseModel):
     forecast_demand: float
     avg_lead_time_days: float
     service_level: float
+    ordering_cost: float
+    holding_cost_per_unit: float
     hubs_needing_reorder: int
 
 
@@ -257,22 +335,77 @@ class MaterialRecovery(BaseModel):
     value_usd: float
 
 
+class MaterialsRequest(BaseModel):
+    dataset: Dataset
+    scenario: ScenarioName = ScenarioName.normal
+
+
 class MaterialsResponse(BaseModel):
     scenario: ScenarioInfo
     processed_t: float
     materials: List[MaterialRecovery]
     total_value_usd: float
+    enabled: bool
 
 
 # --------------------------------------------------------------------------
-# Simulate (full twin payload powering the overview)
+# Reference data view
+# --------------------------------------------------------------------------
+class DataRequest(BaseModel):
+    dataset: Dataset
+    scenario: ScenarioName = ScenarioName.normal
+
+
+class CenterModel(BaseModel):
+    center: str
+    lead_time_days: int
+    monthly_capacity_t: int
+    gate_fee_per_t: int
+
+
+class HubModel(BaseModel):
+    hub: str
+    processing_demand_t: float
+    recovery_yield: float
+
+
+class MaterialModel(BaseModel):
+    material: str
+    mass_share: float
+    value_per_t_usd: float
+
+
+class DemandPoint(BaseModel):
+    date: str
+    month: str
+    returned_units: int
+
+
+class DataResponse(BaseModel):
+    scenario: ScenarioInfo
+    meta: DatasetMeta
+    demand: List[DemandPoint]
+    centers: List[CenterModel]
+    hubs: List[HubModel]
+    materials: List[MaterialModel]
+    transport_costs: List[List[float]]
+    transport_supply: List[float]
+    transport_demand: List[float]
+    center_names: List[str]
+    hub_names: List[str]
+
+
+# --------------------------------------------------------------------------
+# Simulate
 # --------------------------------------------------------------------------
 class SimulateRequest(BaseModel):
+    dataset: Dataset
     scenario: ScenarioName = ScenarioName.normal
     alpha: float = Field(0.4, gt=0.0, le=1.0)
     beta: float = Field(0.3, ge=0.0, le=1.0)
-    horizon: int = Field(3, ge=1, le=24)
-    service_level: float = Field(0.95, gt=0.5, lt=1.0)
+    horizon: int = Field(6, ge=1, le=24)
+    service_level: Optional[float] = Field(None, gt=0.5, lt=1.0)
+    auto_tune: bool = False
 
 
 class KpiSet(BaseModel):
@@ -298,6 +431,19 @@ class SimulateResponse(BaseModel):
 class ScenarioComparison(BaseModel):
     normal: KpiSet
     hormuz_disruption: KpiSet
+
+
+# --------------------------------------------------------------------------
+# Report
+# --------------------------------------------------------------------------
+class ReportRequest(BaseModel):
+    dataset: Dataset
+    scenario: ScenarioName = ScenarioName.normal
+    alpha: float = Field(0.5, gt=0.0, le=1.0)
+    beta: float = Field(0.3, ge=0.0, le=1.0)
+    horizon: int = Field(6, ge=1, le=24)
+    service_level: Optional[float] = Field(None, gt=0.5, lt=1.0)
+    auto_tune: bool = True
 
 
 # --------------------------------------------------------------------------

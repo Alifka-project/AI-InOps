@@ -14,6 +14,7 @@ router = APIRouter(prefix="/api/optimize", tags=["transport"])
 def optimize_transport(req: TransportRequest) -> TransportResponse:
     return TransportResponse(
         **service.optimize_transport(
+            req.dataset.as_dict(),
             req.scenario.value,
             req.initial.value,
             req.optimize.value,

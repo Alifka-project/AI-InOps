@@ -10,10 +10,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import type { Dataset } from "@/lib/types";
 import { useScenarioStore } from "@/store/useScenarioStore";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
-import { fmtNum } from "@/lib/format";
+import { fmtNum, fmtPct } from "@/lib/format";
 import { PageHeader } from "@/components/PageHeader";
 import { Panel } from "@/components/Panel";
 import { KpiCard } from "@/components/KpiCard";
@@ -21,6 +22,7 @@ import { StatusChip } from "@/components/StatusChip";
 import { Slider } from "@/components/Slider";
 import { AsyncBoundary } from "@/components/AsyncBoundary";
 import { CardSkeleton, KpiSkeletonRow } from "@/components/Skeleton";
+import { RequireDataset } from "@/components/RequireDataset";
 
 const STATUS_FILL: Record<string, string> = {
   OK: "#34D399",
@@ -29,28 +31,29 @@ const STATUS_FILL: Record<string, string> = {
 };
 
 export default function WarehousePage() {
+  return (
+    <RequireDataset>
+      <WarehouseBody />
+    </RequireDataset>
+  );
+}
+
+function WarehouseBody() {
+  const dataset = useScenarioStore((s) => s.dataset) as Dataset;
   const scenario = useScenarioStore((s) => s.scenario);
   const settings = useScenarioStore((s) => s.settings);
   const setSettings = useScenarioStore((s) => s.setSettings);
 
   const wh = useApi(
-    () =>
-      api.warehousePolicy({
-        scenario,
-        alpha: settings.alpha,
-        beta: settings.beta,
-        service_level: settings.serviceLevel,
-      }),
-    [scenario, settings.alpha, settings.beta, settings.serviceLevel],
+    () => api.warehousePolicy(dataset, scenario, settings),
+    [dataset.meta.name, scenario, settings.alpha, settings.beta, settings.serviceLevel],
   );
 
   const d = wh.data;
   const chartData =
     d?.policies.map((p) => ({
-      hub: p.hub.replace(/ (Recycling|Processing|Recovery) Hub/, ""),
+      hub: p.hub.length > 12 ? p.hub.slice(0, 11) + "…" : p.hub,
       stock: p.current_stock,
-      rop: p.reorder_point,
-      safety: p.safety_stock,
       status: p.status,
     })) ?? [];
 
@@ -58,7 +61,7 @@ export default function WarehousePage() {
     <div className="space-y-6">
       <PageHeader
         title="Warehouse Inventory Policy"
-        description="Safety stock, reorder point, and EOQ per recycling hub at the chosen service level."
+        description="Safety stock, reorder point, and EOQ per warehouse — from your demand, lead times, real stock, and operational parameters."
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
@@ -74,29 +77,23 @@ export default function WarehousePage() {
               format={(v) => `${(v * 100).toFixed(1)}%`}
             />
             <p className="text-xs text-slate-400">
-              Higher service levels demand larger safety stock. The z-multiplier
-              snaps to 90 / 95 / 97.5 / 99% bands.
+              The z-multiplier snaps to 90 / 95 / 97.5 / 99% bands. Default comes from your
+              warehouse parameters.
             </p>
             {d && (
               <div className="space-y-2 rounded-lg border border-white/10 bg-ink/40 p-3 text-sm">
                 <Row label="Planning demand" value={`${fmtNum(d.forecast_demand)} t`} />
                 <Row label="Avg lead time" value={`${fmtNum(d.avg_lead_time_days)} d`} />
-                <Row
-                  label="Hubs to reorder"
-                  value={`${d.hubs_needing_reorder} / ${d.policies.length}`}
-                />
+                <Row label="Ordering cost" value={`$${fmtNum(d.ordering_cost)}`} />
+                <Row label="Holding cost/unit" value={`$${fmtNum(d.holding_cost_per_unit)}`} />
+                <Row label="Hubs to reorder" value={`${d.hubs_needing_reorder} / ${d.policies.length}`} />
               </div>
             )}
           </div>
         </Panel>
 
         <div className="space-y-6 lg:col-span-3">
-          <AsyncBoundary
-            loading={wh.loading}
-            error={wh.error}
-            onRetry={wh.reload}
-            skeleton={<KpiSkeletonRow count={3} />}
-          >
+          <AsyncBoundary loading={wh.loading} error={wh.error} onRetry={wh.reload} skeleton={<KpiSkeletonRow count={3} />}>
             {d && (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <KpiCard
@@ -120,16 +117,8 @@ export default function WarehousePage() {
             )}
           </AsyncBoundary>
 
-          <AsyncBoundary
-            loading={wh.loading}
-            error={wh.error}
-            onRetry={wh.reload}
-            skeleton={<CardSkeleton />}
-          >
-            <Panel
-              title="Stock vs Reorder Point"
-              description="Current stock against the reorder threshold per hub."
-            >
+          <AsyncBoundary loading={wh.loading} error={wh.error} onRetry={wh.reload} skeleton={<CardSkeleton />}>
+            <Panel title="Current Stock by Hub" description="Measured on-hand stock from the inventory feed, coloured by policy status.">
               <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData} margin={{ top: 8, right: 12, left: -8, bottom: 0 }}>
@@ -153,19 +142,15 @@ export default function WarehousePage() {
         </div>
       </div>
 
-      <AsyncBoundary
-        loading={wh.loading}
-        error={wh.error}
-        onRetry={wh.reload}
-        skeleton={<CardSkeleton height="h-40" />}
-      >
+      <AsyncBoundary loading={wh.loading} error={wh.error} onRetry={wh.reload} skeleton={<CardSkeleton height="h-40" />}>
         <Panel title="Inventory Policy by Hub">
           <div className="overflow-x-auto">
             <table className="table-base">
               <thead>
                 <tr>
                   <th>Hub</th>
-                  <th className="text-right">Current Stock</th>
+                  <th className="text-right">Stock</th>
+                  <th className="text-right">Storage Use</th>
                   <th className="text-right">Safety Stock</th>
                   <th className="text-right">Reorder Point</th>
                   <th className="text-right">EOQ</th>
@@ -178,6 +163,9 @@ export default function WarehousePage() {
                   <tr key={p.hub}>
                     <td className="font-medium text-white">{p.hub}</td>
                     <td className="text-right font-mono">{fmtNum(p.current_stock)}</td>
+                    <td className="text-right font-mono">
+                      {p.utilization != null ? fmtPct(p.utilization) : "—"}
+                    </td>
                     <td className="text-right font-mono">{fmtNum(p.safety_stock)}</td>
                     <td className="text-right font-mono">{fmtNum(p.reorder_point)}</td>
                     <td className="text-right font-mono">{fmtNum(p.eoq)}</td>

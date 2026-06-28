@@ -1,21 +1,21 @@
 // Typed fetch client for the Digital Twin backend.
 //
-// Features: timeout, bounded retry with backoff (to mask cold starts on free
-// hosting tiers), structured error parsing, and full response typing.
+// The backend is stateless: every compute call carries the canonical dataset
+// built from the user's uploaded CSVs. Features: timeout, bounded retry with
+// backoff (masks free-tier cold starts), structured error parsing, full typing.
 
 import type {
+  Dataset,
   DataResponse,
-  ForecastParams,
   ForecastResponse,
+  InputKind,
   MaterialsResponse,
   ScenarioComparison,
   ScenarioName,
-  SimulateRequest,
   SimulateResponse,
   SupplierResponse,
-  TransportRequest,
   TransportResponse,
-  WarehouseRequest,
+  ValidationResponse,
   WarehouseResponse,
 } from "./types";
 
@@ -38,28 +38,35 @@ interface RequestOptions {
   body?: unknown;
   retries?: number;
   timeoutMs?: number;
-  signal?: AbortSignal;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+async function parseError(res: Response): Promise<ApiError> {
+  let message = `Request failed (${res.status})`;
+  let type = "http_error";
+  try {
+    const data = await res.json();
+    if (data?.error?.message) {
+      message = data.error.message;
+      type = data.error.type ?? type;
+    } else if (typeof data?.detail === "string") {
+      message = data.detail;
+    }
+  } catch {
+    /* non-JSON body */
+  }
+  return new ApiError(message, res.status, type);
+}
+
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const {
-    method = "GET",
-    body,
-    retries = 2,
-    timeoutMs = 20000,
-    signal,
-  } = opts;
+  const { method = "GET", body, retries = 2, timeoutMs = 30000 } = opts;
   const url = `${API_BASE}${path}`;
 
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    if (signal) {
-      signal.addEventListener("abort", () => controller.abort(), { once: true });
-    }
     try {
       const res = await fetch(url, {
         method,
@@ -69,40 +76,17 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
         cache: "no-store",
       });
       clearTimeout(timeout);
-
-      if (!res.ok) {
-        let message = `Request failed (${res.status})`;
-        let type = "http_error";
-        try {
-          const data = await res.json();
-          if (data?.error?.message) {
-            message = data.error.message;
-            type = data.error.type ?? type;
-          }
-        } catch {
-          // non-JSON error body; keep default message
-        }
-        // 4xx are client errors — do not retry.
-        if (res.status >= 400 && res.status < 500) {
-          throw new ApiError(message, res.status, type);
-        }
-        lastError = new ApiError(message, res.status, type);
-      } else {
-        return (await res.json()) as T;
-      }
+      if (res.ok) return (await res.json()) as T;
+      const err = await parseError(res);
+      if (res.status >= 400 && res.status < 500) throw err; // client error, no retry
+      lastError = err;
     } catch (err) {
       clearTimeout(timeout);
-      if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
-        throw err;
-      }
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500) throw err;
       lastError = err;
     }
-
-    if (attempt < retries) {
-      await sleep(500 * Math.pow(2, attempt));
-    }
+    if (attempt < retries) await sleep(500 * Math.pow(2, attempt));
   }
-
   if (lastError instanceof ApiError) throw lastError;
   throw new ApiError(
     lastError instanceof Error ? lastError.message : "Network error",
@@ -111,45 +95,150 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   );
 }
 
+interface BaseParams {
+  alpha: number;
+  beta: number;
+  horizon: number;
+  serviceLevel: number;
+  autoTune: boolean;
+}
+
 export const api = {
   health: () => request<{ status: string }>("/health", { retries: 1 }),
 
-  getData: (scenario: ScenarioName) =>
-    request<DataResponse>(`/api/data?scenario=${scenario}`),
+  // ---- datasets --------------------------------------------------------
+  getSample: () => request<Dataset>("/api/datasets/sample"),
 
-  forecastDemand: (params: ForecastParams) =>
+  parseUpload: async (
+    name: string,
+    files: Partial<Record<InputKind | "materials", File>>,
+  ): Promise<ValidationResponse> => {
+    const form = new FormData();
+    form.append("name", name);
+    for (const [kind, file] of Object.entries(files)) {
+      if (file) form.append(kind, file, file.name);
+    }
+    const res = await fetch(`${API_BASE}/api/datasets/parse`, {
+      method: "POST",
+      body: form,
+      cache: "no-store",
+    });
+    if (!res.ok) throw await parseError(res);
+    return (await res.json()) as ValidationResponse;
+  },
+
+  getTemplate: (kind: string) =>
+    request<{ kind: string; filename: string; csv: string; columns: string[] }>(
+      `/api/datasets/templates/${kind}`,
+    ),
+
+  // ---- analysis (stateless: dataset travels in the body) ---------------
+  getData: (dataset: Dataset, scenario: ScenarioName) =>
+    request<DataResponse>("/api/data", {
+      method: "POST",
+      body: { dataset, scenario },
+    }),
+
+  forecastDemand: (dataset: Dataset, scenario: ScenarioName, p: BaseParams) =>
     request<ForecastResponse>("/api/forecast/demand", {
       method: "POST",
-      body: params,
+      body: {
+        dataset,
+        scenario,
+        alpha: p.alpha,
+        beta: p.beta,
+        horizon: p.horizon,
+        auto_tune: p.autoTune,
+      },
     }),
 
-  forecastSuppliers: (params: ForecastParams) =>
+  forecastSuppliers: (dataset: Dataset, scenario: ScenarioName, p: BaseParams) =>
     request<SupplierResponse>("/api/forecast/suppliers", {
       method: "POST",
-      body: params,
+      body: { dataset, scenario, alpha: p.alpha, beta: p.beta, horizon: p.horizon },
     }),
 
-  optimizeTransport: (req: TransportRequest) =>
+  optimizeTransport: (
+    dataset: Dataset,
+    scenario: ScenarioName,
+    body: {
+      initial: string;
+      optimize: string;
+      cost?: number[][];
+      supply?: number[];
+      demand?: number[];
+    },
+  ) =>
     request<TransportResponse>("/api/optimize/transport", {
       method: "POST",
-      body: req,
+      body: { dataset, scenario, ...body },
     }),
 
-  warehousePolicy: (req: WarehouseRequest) =>
+  warehousePolicy: (dataset: Dataset, scenario: ScenarioName, p: BaseParams) =>
     request<WarehouseResponse>("/api/warehouse/policy", {
       method: "POST",
-      body: req,
+      body: {
+        dataset,
+        scenario,
+        alpha: p.alpha,
+        beta: p.beta,
+        service_level: p.serviceLevel,
+      },
     }),
 
-  materialsRecovery: (scenario: ScenarioName) =>
-    request<MaterialsResponse>(`/api/materials/recovery?scenario=${scenario}`),
+  materialsRecovery: (dataset: Dataset, scenario: ScenarioName) =>
+    request<MaterialsResponse>("/api/materials/recovery", {
+      method: "POST",
+      body: { dataset, scenario },
+    }),
 
-  simulate: (req: SimulateRequest) =>
-    request<SimulateResponse>("/api/simulate", { method: "POST", body: req }),
+  simulate: (dataset: Dataset, scenario: ScenarioName, p: BaseParams) =>
+    request<SimulateResponse>("/api/simulate", {
+      method: "POST",
+      body: {
+        dataset,
+        scenario,
+        alpha: p.alpha,
+        beta: p.beta,
+        horizon: p.horizon,
+        service_level: p.serviceLevel,
+        auto_tune: p.autoTune,
+      },
+    }),
 
-  compareScenarios: (req: SimulateRequest) =>
+  compareScenarios: (dataset: Dataset, p: BaseParams) =>
     request<ScenarioComparison>("/api/simulate/compare", {
       method: "POST",
-      body: req,
+      body: {
+        dataset,
+        alpha: p.alpha,
+        beta: p.beta,
+        horizon: p.horizon,
+        service_level: p.serviceLevel,
+      },
     }),
+
+  // ---- report (binary download) ----------------------------------------
+  downloadReport: async (
+    dataset: Dataset,
+    scenario: ScenarioName,
+    p: BaseParams,
+  ): Promise<Blob> => {
+    const res = await fetch(`${API_BASE}/api/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dataset,
+        scenario,
+        alpha: p.alpha,
+        beta: p.beta,
+        horizon: p.horizon,
+        service_level: p.serviceLevel,
+        auto_tune: p.autoTune,
+      }),
+      cache: "no-store",
+    });
+    if (!res.ok) throw await parseError(res);
+    return res.blob();
+  },
 };
