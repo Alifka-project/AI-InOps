@@ -128,7 +128,7 @@ export function MatrixEditor({
       <p className="mt-2 text-xs text-slate-500">
         {supplyTotal === demandTotal
           ? "Balanced problem."
-          : "Unbalanced — a zero-cost dummy row/column will be added automatically."}
+          : "Unbalanced — an 'Unmet demand' / 'Surplus supply' row balances it automatically (zero real cost)."}
       </p>
     </div>
   );

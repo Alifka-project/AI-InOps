@@ -193,7 +193,7 @@ def build_report(
         ],
         [
             "Network balance",
-            "Balanced" if k["balanced"] else "Unbalanced (dummy added)",
+            "Balanced" if k["balanced"] else "Unbalanced (supply shortfall)",
         ],
     ]
     story.append(_table(kpi_rows, col_widths=[9 * cm, 6 * cm]))
@@ -294,9 +294,13 @@ def build_report(
             f"<b>{_money(transport['total_cost'])}</b>. Network is "
             f"{'balanced' if transport['balanced'] else 'unbalanced'}"
             + (
-                f" — a dummy {transport['dummy_added']} was added."
-                if transport["dummy_added"]
-                else "."
+                " — supply cannot meet demand (unmet demand)."
+                if transport["dummy_added"] == "source"
+                else (
+                    " — supply exceeds demand (surplus supply)."
+                    if transport["dummy_added"] == "destination"
+                    else "."
+                )
             ),
             ss["Body"],
         )
@@ -416,7 +420,8 @@ def build_report(
             "back-testing; supplier availability forecast from historical shipment "
             "volumes capped by contractual capacity; transportation optimised with "
             "NWC / Least-Cost / Vogel initial solutions improved by Stepping-Stone and "
-            "MODI, handling balanced and unbalanced cases via a dummy row/column; "
+            "MODI, handling balanced and unbalanced cases via an unmet-demand / "
+            "surplus-supply balancing row; "
             "inventory policy (safety stock, ROP, EOQ) from demand, lead time, and the "
             "warehouse operational parameters.",
             ss["Small"],

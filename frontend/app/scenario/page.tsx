@@ -173,7 +173,7 @@ function SummaryCard({
         </div>
       </div>
       <p className="mt-3 text-xs text-slate-400">
-        Network is {balanced ? "balanced" : "unbalanced (dummy added)"}.
+        Network is {balanced ? "balanced" : "unbalanced (supply shortfall)"}.
       </p>
     </div>
   );

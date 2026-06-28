@@ -101,6 +101,20 @@ function TransportationBody() {
 
   const dataDriven = dataset.meta.has_scenario_data;
 
+  // Real shortfall/surplus tonnage = the balancing row/column's allocation total.
+  let shortfall = 0;
+  if (result) {
+    if (result.dummy_added === "source") {
+      const last = result.allocation[result.allocation.length - 1] ?? [];
+      shortfall = last.reduce((a, b) => a + b, 0);
+    } else if (result.dummy_added === "destination") {
+      shortfall = result.allocation.reduce(
+        (s, row) => s + (row[row.length - 1] ?? 0),
+        0,
+      );
+    }
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -232,9 +246,14 @@ function TransportationBody() {
                     >
                       {result.balanced ? "Balanced" : "Unbalanced"}
                     </span>
-                    {result.dummy_added && (
+                    {result.dummy_added === "source" && (
+                      <span className="chip bg-rose-500/15 text-rose-300">
+                        {fmtNum(shortfall)} t unmet demand
+                      </span>
+                    )}
+                    {result.dummy_added === "destination" && (
                       <span className="chip bg-electric/15 text-electric">
-                        dummy {result.dummy_added} added
+                        {fmtNum(shortfall)} t surplus supply
                       </span>
                     )}
                   </div>
@@ -249,7 +268,7 @@ function TransportationBody() {
       {result && (
         <Panel
           title="Optimal Allocation"
-          description={`Shipment quantities (t) — ${result.method}. Dummy rows/cols carry zero real cost.`}
+          description={`Shipment quantities (t) — ${result.method}. An "Unmet demand" / "Surplus supply" row balances the problem at zero real cost.`}
         >
           <div className="overflow-x-auto">
             <table className="border-separate border-spacing-1 text-sm">

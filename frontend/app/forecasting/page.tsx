@@ -95,14 +95,29 @@ function ForecastingBody() {
   );
 
   const d = fc.data;
-  const chartData =
+  const lastIdx = d ? d.months.length - 1 : 0;
+  // Historical points (actual + in-sample fits) plus the forward forecast,
+  // appended after the data so the prediction is visible beyond history.
+  const historical =
     d?.months.map((m, i) => ({
       month: m,
       actual: d.actual[i],
       adjusted: d.adjusted_es.fitted[i],
       linear: d.linear_trend.fitted[i],
       seasonal: d.seasonal.fitted[i],
+      forecast: i === lastIdx ? d.actual[i] : null, // connect the forecast line
     })) ?? [];
+  const future =
+    d?.forecast_horizon.map((v, k) => ({
+      month: `+${k + 1}`,
+      actual: null,
+      adjusted: null,
+      linear: null,
+      seasonal: null,
+      forecast: v,
+    })) ?? [];
+  const chartData = [...historical, ...future];
+  const boundaryLabel = d?.months[lastIdx];
   const seasonalData =
     d?.seasonal_factors.map((f, i) => ({ idx: `S${i + 1}`, factor: f })) ?? [];
 
@@ -152,11 +167,15 @@ function ForecastingBody() {
               label="Forecast horizon"
               value={settings.horizon}
               min={1}
-              max={12}
+              max={24}
               step={1}
               onChange={(v) => setSettings({ horizon: v })}
-              format={(v) => `${v} mo`}
+              format={(v) => `${v} periods`}
             />
+            <p className="-mt-2 text-[11px] text-slate-500">
+              Periods match your data&apos;s frequency. The forecast extends the
+              chart to the right of the marker.
+            </p>
             {d && (
               <div className="space-y-3">
                 <div className="rounded-lg border border-white/10 bg-ink/40 p-3">
@@ -189,7 +208,10 @@ function ForecastingBody() {
 
         <div className="lg:col-span-2">
           <AsyncBoundary loading={fc.loading} error={fc.error} onRetry={fc.reload} skeleton={<CardSkeleton />}>
-            <Panel title="Actual vs Forecast Methods" description="In-sample fit for each technique.">
+            <Panel
+              title="Actual, Fitted & Forward Forecast"
+              description={`In-sample fit plus the next ${future.length}-period prediction (to the right of the marker).`}
+            >
               <div className="h-80 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData} margin={{ top: 8, right: 12, left: -8, bottom: 0 }}>
@@ -197,10 +219,27 @@ function ForecastingBody() {
                     <XAxis dataKey="month" minTickGap={24} tickLine={false} />
                     <YAxis tickLine={false} width={48} />
                     <Tooltip contentStyle={{ background: "#0E1B2E", border: "1px solid rgba(255,255,255,0.1)" }} />
+                    {boundaryLabel && (
+                      <ReferenceLine
+                        x={boundaryLabel}
+                        stroke="#64748B"
+                        strokeDasharray="4 2"
+                        label={{ value: "forecast →", position: "insideTopRight", fill: "#E879F9", fontSize: 11 }}
+                      />
+                    )}
                     <Line type="monotone" dataKey="actual" name="Actual" stroke="#E2E8F0" strokeWidth={2} dot={false} />
                     <Line type="monotone" dataKey="adjusted" name="Adjusted ES" stroke={COLORS.adjusted} strokeWidth={1.6} dot={false} />
                     <Line type="monotone" dataKey="linear" name="Linear Trend" stroke={COLORS.linear} strokeWidth={1.6} dot={false} />
-                    <Line type="monotone" dataKey="seasonal" name="Seasonal" stroke={COLORS.seasonal} strokeWidth={1.6} strokeDasharray="4 2" dot={false} />
+                    <Line type="monotone" dataKey="seasonal" name="Seasonal" stroke={COLORS.seasonal} strokeWidth={1.4} strokeDasharray="4 2" dot={false} />
+                    <Line
+                      type="monotone"
+                      dataKey="forecast"
+                      name="Forecast"
+                      stroke="#E879F9"
+                      strokeWidth={2.6}
+                      dot={{ r: 2.5, fill: "#E879F9" }}
+                      connectNulls
+                    />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -209,7 +248,17 @@ function ForecastingBody() {
                 <Legend color={COLORS.adjusted} label="Adjusted ES" />
                 <Legend color={COLORS.linear} label="Linear Trend" />
                 <Legend color={COLORS.seasonal} label="Seasonal" />
+                <Legend color="#E879F9" label={`Forecast (next ${future.length})`} />
               </div>
+              {d && future.length > 0 && (
+                <p className="mt-2 text-xs text-slate-400">
+                  Next {future.length} periods:{" "}
+                  <span className="font-mono text-fuchsia-300">
+                    {future.map((f) => fmtInt(f.forecast)).join(" · ")}
+                  </span>{" "}
+                  units
+                </p>
+              )}
             </Panel>
           </AsyncBoundary>
         </div>
