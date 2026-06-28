@@ -157,8 +157,9 @@ def forecast_demand(
     lt_fitted = lt.fitted
     seas_fitted = seas.seasonal_forecast
 
-    last_F, last_T = aes.forecast[-1], aes.trend[-1]
-    horizon_fc = [round(float(last_F + last_T * k), 2) for k in range(1, horizon + 1)]
+    # Damped-trend forward forecast (levels off instead of ramping linearly).
+    horizon_fc = [round(float(v), 2) for v in fc.forward_forecast(aes, horizon)]
+    next_forecast = horizon_fc[0] if horizon_fc else float(aes.next_forecast)
 
     # Out-of-sample validation (back-test on historical data).
     bt = fc.backtest_adjusted_es(series, alpha=alpha, beta=beta)
@@ -186,8 +187,8 @@ def forecast_demand(
         },
         "seasonal_factors": [round(float(s), 3) for s in seas.seasonal_factors],
         "forecast_horizon": horizon_fc,
-        "next_forecast": round(float(aes.next_forecast), 2),
-        "planning_demand_next": round(float(aes.next_forecast) * mult * ext_factor, 2),
+        "next_forecast": round(float(next_forecast), 2),
+        "planning_demand_next": round(float(next_forecast) * mult * ext_factor, 2),
         "recovered_demand_multiplier": mult,
         "external_factor": round(ext_factor, 3),
         "alpha": round(float(alpha), 3),

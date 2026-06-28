@@ -13,7 +13,9 @@ so the same arrays can drive both accuracy validation and the dashboard.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass
+
 import numpy as np
 
 
@@ -163,6 +165,27 @@ def seasonal_adjustment(demand, season_length: int):
 # --------------------------------------------------------------------------
 # 5. Parameter tuning + validation (back-testing on historical data)
 # --------------------------------------------------------------------------
+# Damped-trend factor (Gardner–McKenzie). A plain trend-adjusted forecast
+# extrapolates the last smoothed slope *linearly forever*, which explodes for
+# noisy series. Damping shrinks each successive step's trend contribution so the
+# forecast levels off — far more realistic for real demand.
+TREND_DAMPING = 0.85
+
+
+def forward_forecast(result, horizon: int, damping: float = TREND_DAMPING) -> list:
+    """Damped-trend forward forecast: F + T*(phi + phi^2 + ... + phi^k)."""
+    F = result.forecast[-1]
+    T = result.trend[-1]
+    out = []
+    cum = 0.0
+    p = 1.0
+    for _ in range(horizon):
+        p *= damping
+        cum += p
+        out.append(F + T * cum)
+    return out
+
+
 def _mad(actual, forecast) -> float:
     a = np.asarray(actual, dtype=float)
     f = np.asarray(forecast, dtype=float)
@@ -193,10 +216,13 @@ def autotune_adjusted_es(
     """
     d = np.asarray(demand, dtype=float)
     n = len(d)
+    # Conservative grids: a level constant up to 0.7 and a trend constant up to
+    # 0.4 keep the smoothed trend stable. Unbounded β chases noise and produces
+    # runaway forecasts even with damping.
     if alpha_grid is None:
-        alpha_grid = [round(0.05 * k, 2) for k in range(1, 20)]  # 0.05 .. 0.95
+        alpha_grid = [round(0.05 * k, 2) for k in range(1, 15)]  # 0.05 .. 0.70
     if beta_grid is None:
-        beta_grid = [round(0.05 * k, 2) for k in range(0, 19)]  # 0.00 .. 0.90
+        beta_grid = [round(0.05 * k, 2) for k in range(0, 9)]  # 0.00 .. 0.40
 
     if holdout is None:
         holdout = max(1, min(6, n // 4))
@@ -208,8 +234,7 @@ def autotune_adjusted_es(
             if use_holdout:
                 train = d[:-holdout]
                 res = adjusted_exponential_smoothing(train, alpha=a, beta=b)
-                last_F, last_T = res.forecast[-1], res.trend[-1]
-                preds = [last_F + last_T * k for k in range(1, holdout + 1)]
+                preds = forward_forecast(res, holdout)  # damped, matches production
                 val = _mad(d[-holdout:], preds)
                 tr = _mad(train, res.adjusted[: len(train)])
             else:
@@ -249,8 +274,7 @@ def backtest_adjusted_es(demand, alpha: float, beta: float, holdout: int | None 
     holdout = max(1, min(holdout, n - 2))
     train = d[:-holdout]
     res = adjusted_exponential_smoothing(train, alpha=alpha, beta=beta)
-    last_F, last_T = res.forecast[-1], res.trend[-1]
-    preds = [last_F + last_T * k for k in range(1, holdout + 1)]
+    preds = forward_forecast(res, holdout)  # damped, matches production forecast
     actuals = d[-holdout:]
     mad = _mad(actuals, preds)
     nz = actuals != 0
