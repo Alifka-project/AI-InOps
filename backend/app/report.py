@@ -8,6 +8,8 @@ rendered with matplotlib when available and skipped gracefully otherwise.
 from __future__ import annotations
 
 import io
+import os
+import tempfile
 from typing import List, Optional
 
 from reportlab.lib import colors
@@ -25,6 +27,11 @@ from reportlab.platypus import (
 )
 
 from . import service
+
+# matplotlib (imported lazily for charts below) needs a writable config/cache
+# directory. Serverless filesystems (e.g. Vercel) are read-only except for the
+# temp dir, so point matplotlib there before it is ever imported.
+os.environ.setdefault("MPLCONFIGDIR", os.path.join(tempfile.gettempdir(), "mpl-cache"))
 
 NAVY = colors.HexColor("#041E42")
 ACCENT = colors.HexColor("#0E8C82")
