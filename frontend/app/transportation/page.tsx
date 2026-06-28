@@ -78,6 +78,8 @@ function TransportationBody() {
           cost: m.cost,
           supply: m.supply,
           demand: m.demand,
+          row_labels: m.rowLabels,
+          col_labels: m.colLabels,
         });
         setResult(res);
       } catch (err) {
@@ -97,12 +99,38 @@ function TransportationBody() {
   const updateMatrix = (patch: (m: Matrix) => Matrix) =>
     setMatrix((m) => (m ? patch(m) : m));
 
+  const dataDriven = dataset.meta.has_scenario_data;
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Transportation Optimization"
-        description="Minimize shipping cost from suppliers to warehouses. Edit the matrix and compare methods; the scenario applies freight modifiers live."
+        description="Minimize shipping cost from your suppliers to your warehouses. Edit the matrix and compare methods."
       />
+
+      <div
+        className={`card card-pad text-sm ${
+          dataDriven
+            ? "ring-1 ring-inset ring-emerald-500/30 text-emerald-200"
+            : "ring-1 ring-inset ring-amber-500/30 text-amber-200"
+        }`}
+      >
+        {dataDriven ? (
+          <>
+            <span className="font-semibold">Data-driven scenario:</span> Normal vs
+            Hormuz use the <strong>pre/post-conflict costs and lead times from your
+            file</strong> — no modelled multipliers. Toggle the scenario to compare.
+          </>
+        ) : (
+          <>
+            <span className="font-semibold">Modelled scenario:</span> this dataset
+            has no pre/post-conflict columns, so Hormuz applies documented
+            assumptions (×1.3 freight + $85/t insurance, +12-day lead time). Upload
+            a file with <code>cost_per_t_preconflict/postconflict</code> columns to
+            make it fully data-driven.
+          </>
+        )}
+      </div>
 
       <AsyncBoundary loading={data.loading} error={data.error} onRetry={data.reload} skeleton={<CardSkeleton />}>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">

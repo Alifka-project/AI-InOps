@@ -338,6 +338,33 @@ def _series_label(row_period: int, label: Optional[str]) -> str:
     return str(label) if label is not None and str(label) != "nan" else f"P{row_period}"
 
 
+def _find_col(df: pd.DataFrame, *needles: str) -> Optional[str]:
+    """First column whose lowercased name contains all of ``needles``."""
+    for c in df.columns:
+        lc = str(c).strip().lower()
+        if all(n in lc for n in needles):
+            return c
+    return None
+
+
+def _matrix_from_col(
+    tc: pd.DataFrame, col: str, src_idx: dict, dst_idx: dict, shape
+) -> np.ndarray:
+    """Dense matrix from a (source, destination, <col>) long frame."""
+    m = np.full(shape, np.nan)
+    for _, r in tc.iterrows():
+        v = pd.to_numeric(r[col], errors="coerce")
+        if pd.notna(v):
+            m[src_idx[str(r["source"])], dst_idx[str(r["destination"])]] = v
+    return m
+
+
+def _matrix_json(m: Optional[np.ndarray]):
+    if m is None:
+        return None
+    return [[None if np.isnan(v) else round(float(v), 4) for v in row] for row in m]
+
+
 def build_dataset(
     frames: Dict[str, pd.DataFrame], name: str, is_sample: bool = False
 ) -> dict:
@@ -383,19 +410,60 @@ def build_dataset(
             f"warehouses: {unknown_dst}."
         )
 
-    matrix = np.full((len(supplier_names), len(warehouse_names)), np.nan)
+    shape = (len(supplier_names), len(warehouse_names))
     src_idx = {s: i for i, s in enumerate(supplier_names)}
     dst_idx = {d: j for j, d in enumerate(warehouse_names)}
-    for _, r in tc.iterrows():
-        matrix[src_idx[str(r["source"])], dst_idx[str(r["destination"])]] = r[
-            "cost_per_t"
-        ]
+    matrix = _matrix_from_col(tc, "cost_per_t", src_idx, dst_idx, shape)
     if np.isnan(matrix).any():
         n_missing = int(np.isnan(matrix).sum())
         warnings.append(
             f"{n_missing} source→destination route(s) have no cost; treated as "
             "unavailable (prohibitive cost)."
         )
+
+    # --- OPTIONAL scenario data straight from the upload ------------------
+    # If the file carries pre/post-conflict costs and lead times, the twin uses
+    # THOSE real numbers for Normal vs Hormuz instead of modelled multipliers.
+    pre_cost_col = _find_col(tc, "cost", "pre")
+    post_cost_col = _find_col(tc, "cost", "post")
+    hormuz_col = _find_col(tc, "hormuz")
+    matrix_normal = (
+        _matrix_from_col(tc, pre_cost_col, src_idx, dst_idx, shape)
+        if pre_cost_col
+        else None
+    )
+    matrix_disrupted = (
+        _matrix_from_col(tc, post_cost_col, src_idx, dst_idx, shape)
+        if post_cost_col
+        else None
+    )
+    hormuz_routes: List[List[int]] = []
+    if hormuz_col:
+        for _, r in tc.iterrows():
+            flag = pd.to_numeric(r[hormuz_col], errors="coerce")
+            if pd.notna(flag) and float(flag) >= 1:
+                hormuz_routes.append(
+                    [src_idx[str(r["source"])], dst_idx[str(r["destination"])]]
+                )
+    has_scenario_data = matrix_normal is not None and matrix_disrupted is not None
+    if has_scenario_data:
+        warnings.append(
+            "Scenario columns detected — Normal/Hormuz use your pre/post-conflict "
+            "costs and lead times directly (no modelled multipliers)."
+        )
+
+    # Optional pre/post lead times per supplier.
+    lead_pre_col = _find_col(suppliers, "lead", "pre")
+    lead_post_col = _find_col(suppliers, "lead", "post")
+
+    # Optional pre/post material values.
+    mat_frame = frames.get("materials")
+    mat_pre_col = (
+        _find_col(mat_frame, "value", "pre") if mat_frame is not None else None
+    )
+    mat_post_col = (
+        _find_col(mat_frame, "value", "post") if mat_frame is not None else None
+    )
 
     # --- warehouse operational parameters --------------------------------
     params = _parse_warehouse_params(wp)
@@ -410,12 +478,20 @@ def build_dataset(
         for _, r in sales.iterrows()
     ]
 
+    def _opt_int(row, col):
+        if not col:
+            return None
+        v = pd.to_numeric(row[col], errors="coerce")
+        return int(round(float(v))) if pd.notna(v) else None
+
     suppliers_records = [
         {
             "supplier": str(r["supplier"]),
             "lead_time_days": int(round(float(r["lead_time_days"]))),
             "capacity_t": float(r["capacity_t"]),
             "price_per_t": float(r["price_per_t"]),
+            "lead_time_days_normal": _opt_int(r, lead_pre_col),
+            "lead_time_days_disrupted": _opt_int(r, lead_post_col),
         }
         for _, r in suppliers.iterrows()
     ]
@@ -464,11 +540,20 @@ def build_dataset(
     # Optional materials reference table.
     if "materials" in frames:
         mat = frames["materials"]
+
+        def _opt_float(row, col):
+            if not col:
+                return None
+            v = pd.to_numeric(row[col], errors="coerce")
+            return float(v) if pd.notna(v) else None
+
         materials_records = [
             {
                 "material": str(r["material"]),
                 "mass_share": float(r["mass_share"]),
                 "value_per_t_usd": float(r["value_per_t_usd"]),
+                "value_per_t_normal": _opt_float(r, mat_pre_col),
+                "value_per_t_disrupted": _opt_float(r, mat_post_col),
             }
             for _, r in mat.iterrows()
         ]
@@ -496,6 +581,7 @@ def build_dataset(
             "n_suppliers": len(suppliers_records),
             "n_warehouses": len(inventory_records),
             "n_orders": len(orders_records),
+            "has_scenario_data": bool(has_scenario_data),
             "warnings": warnings,
         },
         "sales": sales_records,
@@ -506,10 +592,10 @@ def build_dataset(
         "transport_costs": {
             "sources": supplier_names,
             "destinations": warehouse_names,
-            "matrix": [
-                [None if np.isnan(v) else round(float(v), 4) for v in row]
-                for row in matrix
-            ],
+            "matrix": _matrix_json(matrix),
+            "matrix_normal": _matrix_json(matrix_normal),
+            "matrix_disrupted": _matrix_json(matrix_disrupted),
+            "hormuz_routes": hormuz_routes,
         },
         "transport_history": history_records,
         "warehouse_params": params,

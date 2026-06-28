@@ -21,5 +21,7 @@ def optimize_transport(req: TransportRequest) -> TransportResponse:
             cost=req.cost,
             supply=req.supply,
             demand=req.demand,
+            row_labels=req.row_labels,
+            col_labels=req.col_labels,
         )
     )

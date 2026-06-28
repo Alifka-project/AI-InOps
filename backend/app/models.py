@@ -62,6 +62,7 @@ class DatasetMeta(BaseModel):
     n_suppliers: int = 0
     n_warehouses: int = 0
     n_orders: int = 0
+    has_scenario_data: bool = False
     warnings: List[str] = Field(default_factory=list)
 
 
@@ -76,6 +77,8 @@ class SupplierRow(BaseModel):
     lead_time_days: int
     capacity_t: float
     price_per_t: float
+    lead_time_days_normal: Optional[int] = None
+    lead_time_days_disrupted: Optional[int] = None
 
 
 class InventoryRow(BaseModel):
@@ -111,12 +114,17 @@ class MaterialRefRow(BaseModel):
     material: str
     mass_share: float
     value_per_t_usd: float
+    value_per_t_normal: Optional[float] = None
+    value_per_t_disrupted: Optional[float] = None
 
 
 class TransportCosts(BaseModel):
     sources: List[str]
     destinations: List[str]
     matrix: List[List[Optional[float]]]
+    matrix_normal: Optional[List[List[Optional[float]]]] = None
+    matrix_disrupted: Optional[List[List[Optional[float]]]] = None
+    hormuz_routes: List[List[int]] = Field(default_factory=list)
 
 
 class Dataset(BaseModel):
@@ -246,6 +254,8 @@ class TransportRequest(BaseModel):
     cost: Optional[List[List[float]]] = None
     supply: Optional[List[float]] = None
     demand: Optional[List[float]] = None
+    row_labels: Optional[List[str]] = None
+    col_labels: Optional[List[str]] = None
 
     @model_validator(mode="after")
     def _check_shapes(self) -> "TransportRequest":

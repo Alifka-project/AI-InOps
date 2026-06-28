@@ -197,6 +197,8 @@ export const api = {
       cost?: number[][];
       supply?: number[];
       demand?: number[];
+      row_labels?: string[];
+      col_labels?: string[];
     },
   ) =>
     request<TransportResponse>("/api/optimize/transport", {

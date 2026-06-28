@@ -14,6 +14,7 @@ export interface DatasetMeta {
   n_suppliers: number;
   n_warehouses: number;
   n_orders: number;
+  has_scenario_data: boolean;
   warnings: string[];
 }
 
@@ -27,6 +28,8 @@ export interface SupplierRow {
   lead_time_days: number;
   capacity_t: number;
   price_per_t: number;
+  lead_time_days_normal?: number | null;
+  lead_time_days_disrupted?: number | null;
 }
 export interface InventoryRow {
   warehouse: string;
@@ -57,11 +60,16 @@ export interface MaterialRefRow {
   material: string;
   mass_share: number;
   value_per_t_usd: number;
+  value_per_t_normal?: number | null;
+  value_per_t_disrupted?: number | null;
 }
 export interface TransportCostsBlock {
   sources: string[];
   destinations: string[];
   matrix: (number | null)[][];
+  matrix_normal?: (number | null)[][] | null;
+  matrix_disrupted?: (number | null)[][] | null;
+  hormuz_routes?: number[][];
 }
 
 export interface Dataset {

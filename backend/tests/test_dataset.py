@@ -154,6 +154,42 @@ def test_build_from_excel_with_descriptive_sheet_names_and_extra_columns():
     assert built["meta"]["n_suppliers"] == 4
 
 
+def _scenario_aware_dataset():
+    """Sample frames augmented with pre/post-conflict columns (like a real
+    scenario-aware upload)."""
+    frames = dg.sample_frames()
+    tc = frames["transport_costs"].copy()
+    tc["cost_per_t_preconflict"] = tc["cost_per_t"]
+    tc["cost_per_t_postconflict"] = tc["cost_per_t"] * 2.0
+    tc["hormuz_dependent"] = 1
+    frames["transport_costs"] = tc
+    sup = frames["suppliers"].copy()
+    sup["lead_time_days_preconflict"] = sup["lead_time_days"]
+    sup["lead_time_days_postconflict"] = sup["lead_time_days"] + 20
+    frames["suppliers"] = sup
+    return ds.build_dataset(frames, name="scenario-aware")
+
+
+def test_scenario_columns_detected_and_built():
+    d = _scenario_aware_dataset()
+    assert d["meta"]["has_scenario_data"] is True
+    tc = d["transport_costs"]
+    assert tc["matrix_normal"] is not None and tc["matrix_disrupted"] is not None
+    assert len(tc["hormuz_routes"]) > 0
+    s0 = d["suppliers"][0]
+    assert s0["lead_time_days_disrupted"] == s0["lead_time_days_normal"] + 20
+    # post-conflict cost matrix is double the pre-conflict one.
+    pre = ds.cost_matrix({"transport_costs": {**tc, "matrix": tc["matrix_normal"]}})
+    post = ds.cost_matrix({"transport_costs": {**tc, "matrix": tc["matrix_disrupted"]}})
+    assert np.allclose(post, pre * 2.0)
+
+
+def test_sample_is_not_scenario_aware():
+    d = dg.sample_dataset()
+    assert d["meta"]["has_scenario_data"] is False
+    assert d["transport_costs"]["matrix_normal"] is None
+
+
 def test_accessors():
     d = dg.sample_dataset()
     assert len(ds.sales_series(d)) == 36

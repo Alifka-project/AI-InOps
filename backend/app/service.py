@@ -38,15 +38,50 @@ def _scenario_info(scenario: Scenario) -> dict:
 # --------------------------------------------------------------------------
 # Scenario-adjusted views of the canonical dataset
 # --------------------------------------------------------------------------
+PROHIBITIVE = 1_000_000.0
+
+
+def _has_scenario_data(ds: dict) -> bool:
+    """True when the upload carries real pre/post-conflict cost matrices, so the
+    twin uses those numbers directly instead of modelled multipliers."""
+    tc = ds["transport_costs"]
+    return bool(
+        ds["meta"].get("has_scenario_data")
+        and tc.get("matrix_normal")
+        and tc.get("matrix_disrupted")
+    )
+
+
+def _dense(matrix) -> np.ndarray:
+    return np.array(
+        [[PROHIBITIVE if v is None else float(v) for v in row] for row in matrix],
+        dtype=float,
+    )
+
+
 def _adjusted_cost_matrix(ds: dict, scenario: Scenario) -> np.ndarray:
+    tc = ds["transport_costs"]
+    if _has_scenario_data(ds):
+        m = tc["matrix_disrupted"] if scenario.is_disrupted else tc["matrix_normal"]
+        return _dense(m)
     return apply_transport_costs(dsmod.cost_matrix(ds), scenario)
 
 
 def _supplier_lead_times(ds: dict, scenario: Scenario) -> dict:
-    return {
-        s["supplier"]: s["lead_time_days"] + scenario.lead_time_add_days
-        for s in ds["suppliers"]
-    }
+    out = {}
+    for s in ds["suppliers"]:
+        if scenario.is_disrupted and s.get("lead_time_days_disrupted") is not None:
+            out[s["supplier"]] = int(s["lead_time_days_disrupted"])
+        elif not scenario.is_disrupted and s.get("lead_time_days_normal") is not None:
+            out[s["supplier"]] = int(s["lead_time_days_normal"])
+        else:
+            out[s["supplier"]] = s["lead_time_days"] + scenario.lead_time_add_days
+    return out
+
+
+def _demand_multiplier(ds: dict, scenario: Scenario) -> float:
+    """No synthetic demand amplification when the dataset is scenario-aware."""
+    return 1.0 if _has_scenario_data(ds) else scenario.recovered_demand_multiplier
 
 
 def _external_factor_next(ds: dict) -> float:
@@ -128,7 +163,7 @@ def forecast_demand(
     # Out-of-sample validation (back-test on historical data).
     bt = fc.backtest_adjusted_es(series, alpha=alpha, beta=beta)
 
-    mult = scenario.recovered_demand_multiplier
+    mult = _demand_multiplier(ds, scenario)
     ext_factor = _external_factor_next(ds)
     return {
         "scenario": _scenario_info(scenario),
@@ -227,15 +262,38 @@ def _derive_transport_inputs(
     cost: Optional[List[List[float]]],
     supply: Optional[List[float]],
     demand: Optional[List[float]],
+    row_labels: Optional[List[str]] = None,
+    col_labels: Optional[List[str]] = None,
 ):
+    names_src = list(ds["transport_costs"]["sources"])
+    names_dst = list(ds["transport_costs"]["destinations"])
+
     if cost is not None:
-        cost_arr = apply_transport_costs(np.array(cost, dtype=float), scenario)
-        row_labels = [f"S{i + 1}" for i in range(cost_arr.shape[0])]
-        col_labels = [f"D{j + 1}" for j in range(cost_arr.shape[1])]
+        # A provided matrix is used as-is — it was seeded already scenario-
+        # adjusted, so re-applying modifiers here would double-count.
+        cost_arr = np.array(cost, dtype=float)
+        rl = (
+            list(row_labels)
+            if row_labels
+            else (
+                names_src
+                if len(names_src) == cost_arr.shape[0]
+                else [f"S{i + 1}" for i in range(cost_arr.shape[0])]
+            )
+        )
+        cl = (
+            list(col_labels)
+            if col_labels
+            else (
+                names_dst
+                if len(names_dst) == cost_arr.shape[1]
+                else [f"D{j + 1}" for j in range(cost_arr.shape[1])]
+            )
+        )
     else:
         cost_arr = _adjusted_cost_matrix(ds, scenario)
-        row_labels = list(ds["transport_costs"]["sources"])
-        col_labels = list(ds["transport_costs"]["destinations"])
+        rl = names_src
+        cl = names_dst
 
     if supply is not None:
         supply_arr = np.array(supply, dtype=float)
@@ -245,9 +303,9 @@ def _derive_transport_inputs(
     if demand is not None:
         demand_arr = np.array(demand, dtype=float)
     else:
-        demand_arr = dsmod.warehouse_demand(ds) * scenario.recovered_demand_multiplier
+        demand_arr = dsmod.warehouse_demand(ds) * _demand_multiplier(ds, scenario)
 
-    return cost_arr, supply_arr, demand_arr, row_labels, col_labels
+    return cost_arr, supply_arr, demand_arr, rl, cl
 
 
 def optimize_transport(
@@ -258,10 +316,12 @@ def optimize_transport(
     cost: Optional[List[List[float]]] = None,
     supply: Optional[List[float]] = None,
     demand: Optional[List[float]] = None,
+    row_labels: Optional[List[str]] = None,
+    col_labels: Optional[List[str]] = None,
 ) -> dict:
     scenario = get_scenario(scenario_name)
     cost_arr, supply_arr, demand_arr, row_labels, col_labels = _derive_transport_inputs(
-        ds, scenario, cost, supply, demand
+        ds, scenario, cost, supply, demand, row_labels, col_labels
     )
 
     sol = tp.solve_transport(
@@ -281,12 +341,15 @@ def optimize_transport(
             totals.append(round(s.total_cost))
     all_agree = len(set(totals)) == 1
 
+    # The balancing "dummy" row/column is a standard transportation-problem
+    # device, not fabricated data: a source dummy carries demand that supply
+    # cannot meet (unmet demand); a destination dummy carries supply left unused.
     rl = list(row_labels)
     cl = list(col_labels)
     if sol.dummy_added == "source" and len(rl) < sol.allocation.shape[0]:
-        rl.append("Dummy (shortfall)")
+        rl.append("Unmet demand (no supply)")
     if sol.dummy_added == "destination" and len(cl) < sol.allocation.shape[1]:
-        cl.append("Dummy (surplus)")
+        cl.append("Surplus supply (unused)")
 
     return {
         "scenario": _scenario_info(scenario),
@@ -325,7 +388,7 @@ def warehouse_policy(
     avg_lead = float(np.mean(list(lead.values()))) if lead else 0.0
 
     inflow_std = _inflow_std_by_dest(ds)
-    mult = scenario.recovered_demand_multiplier
+    mult = _demand_multiplier(ds, scenario)
 
     policies = []
     needing = 0
@@ -370,22 +433,29 @@ def materials_recovery(ds: dict, scenario_name: str) -> dict:
     materials = ds.get("materials") or []
     supply_total = float(_supply_vector(ds, scenario_name).sum())
     demand_total = float(
-        dsmod.warehouse_demand(ds).sum() * scenario.recovered_demand_multiplier
+        dsmod.warehouse_demand(ds).sum() * _demand_multiplier(ds, scenario)
     )
     processed = min(supply_total, demand_total)
 
     rows = []
     total_value = 0.0
     for m in materials:
+        # Use the upload's pre/post-conflict price when present; else the
+        # single reference price.
+        price = m["value_per_t_usd"]
+        if scenario.is_disrupted and m.get("value_per_t_disrupted") is not None:
+            price = m["value_per_t_disrupted"]
+        elif not scenario.is_disrupted and m.get("value_per_t_normal") is not None:
+            price = m["value_per_t_normal"]
         recovered_t = m["mass_share"] * processed
-        value = recovered_t * m["value_per_t_usd"]
+        value = recovered_t * price
         total_value += value
         rows.append(
             {
                 "material": m["material"],
                 "mass_share": float(m["mass_share"]),
                 "recovered_t": round(float(recovered_t), 1),
-                "value_per_t_usd": float(m["value_per_t_usd"]),
+                "value_per_t_usd": float(price),
                 "value_usd": round(float(value), 0),
             }
         )
@@ -405,7 +475,7 @@ def get_data(ds: dict, scenario_name: str) -> dict:
     scenario = get_scenario(scenario_name)
     cost = _adjusted_cost_matrix(ds, scenario)
     supply = _supply_vector(ds, scenario_name)
-    demand = dsmod.warehouse_demand(ds) * scenario.recovered_demand_multiplier
+    demand = dsmod.warehouse_demand(ds) * _demand_multiplier(ds, scenario)
     lead = _supplier_lead_times(ds, scenario)
 
     return {
@@ -432,7 +502,7 @@ def get_data(ds: dict, scenario_name: str) -> dict:
             {
                 "hub": inv["warehouse"],
                 "processing_demand_t": round(
-                    inv["replenishment_rate_t"] * scenario.recovered_demand_multiplier,
+                    inv["replenishment_rate_t"] * _demand_multiplier(ds, scenario),
                     2,
                 ),
                 "recovery_yield": 0.0,
@@ -478,7 +548,7 @@ def _kpis_for(
     total_supply = float(_supply_vector(ds, scenario_name).sum())
     scenario = get_scenario(scenario_name)
     total_demand = float(
-        dsmod.warehouse_demand(ds).sum() * scenario.recovered_demand_multiplier
+        dsmod.warehouse_demand(ds).sum() * _demand_multiplier(ds, scenario)
     )
 
     return {
