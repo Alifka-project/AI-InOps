@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     # Allow any *.vercel.app preview/production deployment via regex.
     cors_origin_regex: str = r"https://.*\.vercel\.app"
 
+    # Same-origin path prefix the hosting platform mounts the backend under
+    # (e.g. routePrefix "/_/backend"). Stripped before routing. Set to "" to
+    # disable. Safe to leave on: it only strips when the prefix is present.
+    proxy_prefix: str = "/_/backend"
+
     log_level: str = "INFO"
 
     @field_validator("cors_origins", mode="before")

@@ -72,4 +72,5 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          NEXT_PUBLIC_API_URL: https://digital-twin-backend.onrender.com
+          # Mirrors the production default (same-origin backend prefix).
+          NEXT_PUBLIC_API_URL: /_/backend

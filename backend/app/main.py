@@ -53,6 +53,28 @@ app.add_middleware(
 )
 
 
+# Some hosting platforms mount the backend behind a same-origin path prefix
+# (e.g. routePrefix "/_/backend") and forward the full path. Strip a configured
+# prefix before routing so the app works whether or not the platform strips it.
+PROXY_PREFIX = settings.proxy_prefix.rstrip("/")
+
+
+@app.middleware("http")
+async def strip_proxy_prefix(request: Request, call_next):
+    if PROXY_PREFIX:
+        path = request.scope.get("path", "")
+        if path == PROXY_PREFIX or path.startswith(PROXY_PREFIX + "/"):
+            new_path = path[len(PROXY_PREFIX) :] or "/"
+            request.scope["path"] = new_path
+            if request.scope.get("raw_path"):
+                query = request.scope["raw_path"].split(b"?", 1)
+                rebuilt = new_path.encode()
+                if len(query) > 1:
+                    rebuilt += b"?" + query[1]
+                request.scope["raw_path"] = rebuilt
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start = time.perf_counter()

@@ -194,12 +194,34 @@ push/PR to `main`.
 
 ## Deployment
 
-- **Backend → Render:** `backend/render.yaml` Blueprint + root-context
-  `backend/Dockerfile`. Set `CORS_ORIGINS` to your Vercel origin; health check `/health`.
-- **Frontend → Vercel:** import the repo, root directory `frontend`, set
-  `NEXT_PUBLIC_API_URL` to the Render URL.
+### Single platform (frontend + backend, same origin) — recommended
 
-| Surface | URL |
-| --- | --- |
-| Frontend | _set after Vercel deploy_ |
-| Backend | _set after Render deploy_ (`/health`, `/docs`) |
+`deploy.json` declares both services in one deployment:
+
+```json
+{
+  "experimentalServices": {
+    "frontend": { "root": "frontend", "routePrefix": "/", "framework": "nextjs" },
+    "backend":  { "root": "backend",  "routePrefix": "/_/backend" }
+  }
+}
+```
+
+- The frontend is served at `/`; the backend is mounted at **`/_/backend`** on the
+  **same origin**. No CORS, no separate API URL to manage.
+- The frontend automatically calls `/_/backend` in production (overridable with
+  `NEXT_PUBLIC_API_URL`). The backend strips the `/_/backend` prefix before
+  routing (configurable via `PROXY_PREFIX`), so it works whether or not the
+  platform strips it.
+- Backend start command: `backend/Procfile` (`uvicorn app.main:app …`), Python
+  pinned by `backend/runtime.txt`. The `core` engine is imported from the repo
+  root, which the monorepo deploy includes.
+
+> If your platform reads the manifest under a different filename, copy
+> `deploy.json`'s contents there — the app code needs no change.
+
+### Alternative: split hosting (Render + Vercel)
+
+Still supported. Backend → Render via `backend/render.yaml` + `backend/Dockerfile`
+(set `CORS_ORIGINS`); frontend → Vercel with root `frontend` and
+`NEXT_PUBLIC_API_URL` pointing at the Render URL.

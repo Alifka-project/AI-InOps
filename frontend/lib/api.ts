@@ -19,8 +19,14 @@ import type {
   WarehouseResponse,
 } from "./types";
 
+// Where the backend lives. An explicit NEXT_PUBLIC_API_URL always wins. Otherwise:
+// in production we default to the same-origin path the platform mounts the
+// backend under (routePrefix "/_/backend"); in dev we hit the local uvicorn.
+const FALLBACK_BASE =
+  process.env.NODE_ENV === "production" ? "/_/backend" : "http://localhost:8000";
+
 export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || FALLBACK_BASE;
 
 export class ApiError extends Error {
   status: number;
