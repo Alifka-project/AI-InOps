@@ -292,6 +292,7 @@ export interface SimulateResponse {
   actual: number[];
   forecast_fitted: number[];
   forecast_horizon: number[];
+  forecast_labels: string[];
 }
 export interface ScenarioComparison {
   normal: Kpis;

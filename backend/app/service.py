@@ -743,6 +743,7 @@ def simulate(
         "actual": fcast["actual"],
         "forecast_fitted": fcast["adjusted_es"]["fitted"],
         "forecast_horizon": fcast["forecast_horizon"],
+        "forecast_labels": fcast["forecast_labels"],
     }
 
 

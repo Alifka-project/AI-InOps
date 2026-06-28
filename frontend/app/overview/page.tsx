@@ -2,9 +2,10 @@
 
 import {
   Area,
-  AreaChart,
+  ComposedChart,
   CartesianGrid,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -52,14 +53,24 @@ function OverviewBody() {
     [dataset.meta.name, settings.alpha, settings.beta, settings.horizon, settings.serviceLevel],
   );
 
-  const chartData =
-    sim.data?.months.map((m, i) => ({
-      month: m,
-      actual: sim.data?.actual[i] ?? null,
-      fitted: sim.data?.forecast_fitted[i] ?? null,
+  const months = sim.data?.months ?? [];
+  const lastIdx = months.length - 1;
+  const historical = months.map((m, i) => ({
+    month: m,
+    actual: sim.data?.actual[i] ?? null,
+    fitted: sim.data?.forecast_fitted[i] ?? null,
+    forecast: i === lastIdx ? (sim.data?.actual[i] ?? null) : null,
+  }));
+  const future =
+    sim.data?.forecast_horizon.map((v, i) => ({
+      month: sim.data?.forecast_labels[i] ?? `+${i + 1}`,
+      actual: null,
+      fitted: null,
+      forecast: v,
     })) ?? [];
-  const horizonData =
-    sim.data?.forecast_horizon.map((v, i) => ({ month: `+${i + 1}`, forecast: v })) ?? [];
+  const chartData = [...historical, ...future];
+  const boundaryLabel = months[lastIdx];
+  const horizonData = future;
 
   const k = sim.data?.kpis;
 
@@ -150,15 +161,11 @@ function OverviewBody() {
                     key={i}
                     className="rounded-lg border border-white/10 bg-ink/40 px-3 py-2.5"
                   >
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="text-sm font-semibold text-white">
-                        {i + 1}. {m.element}
-                      </span>
-                      <span className="shrink-0 font-mono text-xs text-accent">
-                        {m.result}
-                      </span>
-                    </div>
+                    <p className="text-sm font-semibold text-white">
+                      {i + 1}. {m.element}
+                    </p>
                     <p className="mt-0.5 text-xs text-slate-400">{m.technique}</p>
+                    <p className="mt-1 font-mono text-xs text-accent">→ {m.result}</p>
                   </div>
                 ))}
               </div>
@@ -175,24 +182,33 @@ function OverviewBody() {
       >
         <Panel
           title="Demand: Actual vs Forecast"
-          description="Historical sales with the in-sample adjusted exponential-smoothing fit."
+          description="Historical sales (teal) and the forward forecast (fuchsia, right of the marker)."
         >
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 8, right: 12, left: -8, bottom: 0 }}>
+              <ComposedChart data={chartData} margin={{ top: 8, right: 12, left: -8, bottom: 0 }}>
                 <defs>
                   <linearGradient id="demandFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#16D6C9" stopOpacity={0.35} />
+                    <stop offset="0%" stopColor="#16D6C9" stopOpacity={0.3} />
                     <stop offset="100%" stopColor="#16D6C9" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" minTickGap={24} tickLine={false} />
+                <XAxis dataKey="month" minTickGap={28} tickLine={false} />
                 <YAxis tickLine={false} width={48} />
                 <Tooltip
-                  contentStyle={{ background: "#0E1B2E", border: "1px solid rgba(255,255,255,0.1)" }}
+                  contentStyle={{ background: "#0E1B2E", border: "1px solid rgba(255,255,255,0.12)" }}
                   labelStyle={{ color: "#94a3b8" }}
+                  itemStyle={{ color: "#e2e8f0" }}
                 />
+                {boundaryLabel && (
+                  <ReferenceLine
+                    x={boundaryLabel}
+                    stroke="#64748B"
+                    strokeDasharray="4 2"
+                    label={{ value: "forecast →", position: "insideTopRight", fill: "#E879F9", fontSize: 11 }}
+                  />
+                )}
                 <Area
                   type="monotone"
                   dataKey="actual"
@@ -200,23 +216,34 @@ function OverviewBody() {
                   stroke="#16D6C9"
                   strokeWidth={2}
                   fill="url(#demandFill)"
+                  connectNulls={false}
                 />
                 <Line
                   type="monotone"
-                  dataKey="fitted"
-                  name="Adjusted ES fit"
-                  stroke="#2E9BFF"
-                  strokeWidth={1.6}
-                  dot={false}
+                  dataKey="forecast"
+                  name="Forecast"
+                  stroke="#E879F9"
+                  strokeWidth={2.4}
+                  dot={{ r: 2, fill: "#E879F9" }}
+                  connectNulls
                 />
-              </AreaChart>
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
+          <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-400">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-accent" /> Actual (history)
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#E879F9" }} />{" "}
+              Forecast (next {horizonData.length})
+            </span>
+          </div>
           {horizonData.length > 0 && (
-            <p className="mt-3 text-xs text-slate-400">
-              Forward {horizonData.length}-period forecast:{" "}
-              <span className="font-mono text-accent">
-                {horizonData.map((h) => fmtInt(h.forecast)).join(" · ")}
+            <p className="mt-2 text-xs text-slate-400">
+              Forward forecast:{" "}
+              <span className="font-mono text-fuchsia-300">
+                {horizonData.map((h) => fmtInt(h.forecast as number)).join(" · ")}
               </span>{" "}
               units
             </p>

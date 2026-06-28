@@ -88,3 +88,13 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
   background-color: #0e1b2e !important;
 }
+/* Tooltip rows default to the (sometimes dark) series colour — force legible. */
+.recharts-tooltip-label {
+  color: #94a3b8 !important;
+}
+.recharts-tooltip-item,
+.recharts-tooltip-item-name,
+.recharts-tooltip-item-value,
+.recharts-tooltip-item-separator {
+  color: #e2e8f0 !important;
+}

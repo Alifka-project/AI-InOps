@@ -460,6 +460,7 @@ class SimulateResponse(BaseModel):
     actual: List[float]
     forecast_fitted: List[float]
     forecast_horizon: List[float]
+    forecast_labels: List[str] = Field(default_factory=list)
 
 
 class ScenarioComparison(BaseModel):
