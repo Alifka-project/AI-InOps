@@ -29,10 +29,10 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Ruff (lint)
-        run: ruff check app core/scenarios.py core/dataset.py
+        run: ruff check app core
 
       - name: Black (format check)
-        run: black --check app
+        run: black --check app core
 
       - name: Verify core engine (frozen acceptance tests)
         working-directory: ${{ github.workspace }}

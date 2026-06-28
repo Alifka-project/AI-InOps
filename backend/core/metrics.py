@@ -5,7 +5,9 @@ All formulas follow the standard management-science definitions
 (Taylor, Introduction to Management Science) so that hand-worked
 examples reproduce these values exactly.
 """
+
 from __future__ import annotations
+
 import numpy as np
 
 

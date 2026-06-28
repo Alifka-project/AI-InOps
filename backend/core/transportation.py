@@ -16,8 +16,11 @@ Optimality tests / improvement:
 Handles both balanced (sum supply == sum demand) and unbalanced problems
 (a dummy source or destination with zero cost is added automatically).
 """
+
 from __future__ import annotations
+
 from dataclasses import dataclass
+
 import numpy as np
 
 EPS = 1e-9
@@ -25,13 +28,13 @@ EPS = 1e-9
 
 @dataclass
 class TransportSolution:
-    allocation: np.ndarray   # m x n shipment quantities
+    allocation: np.ndarray  # m x n shipment quantities
     cost_matrix: np.ndarray  # m x n unit costs (after balancing)
     total_cost: float
     supply: np.ndarray
     demand: np.ndarray
-    balanced: bool           # was the ORIGINAL problem balanced?
-    dummy_added: str         # "", "source", or "destination"
+    balanced: bool  # was the ORIGINAL problem balanced?
+    dummy_added: str  # "", "source", or "destination"
     method: str
 
 
@@ -52,7 +55,7 @@ def balance(cost, supply, demand):
         cost = np.vstack([cost, dummy_row])
         supply = np.append(supply, d - s)
         return cost, supply, demand, False, "source"
-    else:      # need a dummy DESTINATION that absorbs the surplus
+    else:  # need a dummy DESTINATION that absorbs the surplus
         dummy_col = np.zeros((cost.shape[0], 1))
         cost = np.hstack([cost, dummy_col])
         demand = np.append(demand, s - d)
@@ -175,8 +178,12 @@ def vogel(cost, supply, demand):
 # Loop finding (shared by Stepping Stone and MODI pivoting)
 # --------------------------------------------------------------------------
 def _basic_cells(alloc):
-    return [(i, j) for i in range(alloc.shape[0])
-            for j in range(alloc.shape[1]) if alloc[i, j] > EPS]
+    return [
+        (i, j)
+        for i in range(alloc.shape[0])
+        for j in range(alloc.shape[1])
+        if alloc[i, j] > EPS
+    ]
 
 
 def _find_loop(start, basic):
@@ -250,11 +257,13 @@ def _compute_uv(cost, basic, m, n):
     changed = True
     while changed:
         changed = False
-        for (i, j) in basic:
+        for i, j in basic:
             if u[i] is not None and v[j] is None:
-                v[j] = cost[i, j] - u[i]; changed = True
+                v[j] = cost[i, j] - u[i]
+                changed = True
             elif v[j] is not None and u[i] is None:
-                u[i] = cost[i, j] - v[j]; changed = True
+                u[i] = cost[i, j] - v[j]
+                changed = True
     u = [0.0 if x is None else x for x in u]
     v = [0.0 if x is None else x for x in v]
     return u, v
@@ -279,7 +288,7 @@ def modi(cost, alloc, max_iter: int = 200):
                 delta = cost[i, j] - u[i] - v[j]
                 if delta < best_delta:
                     best_delta, best_cell = delta, (i, j)
-        if best_cell is None:        # all reduced costs >= 0 -> optimal
+        if best_cell is None:  # all reduced costs >= 0 -> optimal
             break
         loop = _find_loop(best_cell, basic)
         if loop is None:
@@ -342,7 +351,12 @@ def solve_transport(cost, supply, demand, initial="vogel", optimize="modi"):
     elif optimize == "stepping_stone":
         alloc = stepping_stone(c, alloc)
     return TransportSolution(
-        allocation=alloc, cost_matrix=c, total_cost=total_cost(alloc, c),
-        supply=s, demand=d, balanced=balanced, dummy_added=dummy,
+        allocation=alloc,
+        cost_matrix=c,
+        total_cost=total_cost(alloc, c),
+        supply=s,
+        demand=d,
+        balanced=balanced,
+        dummy_added=dummy,
         method=f"{initial}+{optimize}",
     )
