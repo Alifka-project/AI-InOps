@@ -293,6 +293,8 @@ export interface SimulateResponse {
   forecast_fitted: number[];
   forecast_horizon: number[];
   forecast_labels: string[];
+  validation: Validation | null;
+  fit_metrics: Metrics | null;
 }
 export interface ScenarioComparison {
   normal: Kpis;

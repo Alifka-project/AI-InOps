@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { Dataset } from "@/lib/types";
+import type { Dataset, SimulateResponse } from "@/lib/types";
 import { useScenarioStore } from "@/store/useScenarioStore";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
@@ -220,6 +220,15 @@ function OverviewBody() {
                 />
                 <Line
                   type="monotone"
+                  dataKey="fitted"
+                  name="Model fit"
+                  stroke="#2E9BFF"
+                  strokeWidth={1.4}
+                  dot={false}
+                  connectNulls={false}
+                />
+                <Line
+                  type="monotone"
                   dataKey="forecast"
                   name="Forecast"
                   stroke="#E879F9"
@@ -232,7 +241,11 @@ function OverviewBody() {
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-400">
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-accent" /> Actual (history)
+              <span className="h-2.5 w-2.5 rounded-full bg-accent" /> Actual (your data)
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#2E9BFF" }} />{" "}
+              Model fit
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#E879F9" }} />{" "}
@@ -250,6 +263,127 @@ function OverviewBody() {
           )}
         </Panel>
       </AsyncBoundary>
+
+      <AsyncBoundary
+        loading={sim.loading}
+        error={sim.error}
+        onRetry={sim.reload}
+        skeleton={<CardSkeleton height="h-56" />}
+      >
+        {sim.data && sim.data.forecast_fitted.length > 0 && (
+          <AccuracyPanel data={sim.data} />
+        )}
+      </AsyncBoundary>
     </div>
+  );
+}
+
+function AccuracyPanel({ data }: { data: SimulateResponse }) {
+  const months = data.months;
+  const n = months.length;
+  // Walk-forward one-step-ahead back-test: forecast_fitted[t] is the model's
+  // forecast for period t computed from periods 0..t-1 only (no look-ahead).
+  const window = Math.min(18, n);
+  const start = n - window;
+  const rows: { label: string; actual: number; predicted: number }[] = [];
+  let sumPct = 0;
+  let sumAbs = 0;
+  let cnt = 0;
+  for (let i = start; i < n; i++) {
+    const a = data.actual[i];
+    const p = data.forecast_fitted[i];
+    rows.push({ label: months[i], actual: a, predicted: p });
+    if (a) {
+      sumPct += Math.abs(a - p) / Math.abs(a);
+      sumAbs += Math.abs(a - p);
+      cnt += 1;
+    }
+  }
+  const mape = cnt ? (sumPct / cnt) * 100 : 0;
+  const mad = cnt ? sumAbs / cnt : 0;
+  const accuracy = Math.max(0, 100 - mape);
+  const v = data.validation;
+  const blindAcc = v ? Math.max(0, 100 - v.mape) : null;
+
+  return (
+    <Panel
+      title="Forecast Accuracy — Back-test on Your Real Data"
+      description="Each point is forecast using only the periods before it (walk-forward), then compared to what actually happened. The closer the two lines, the more reliable the prediction."
+    >
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="space-y-3">
+          <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-4">
+            <p className="label">One-step-ahead accuracy</p>
+            <p className="mt-1 text-3xl font-semibold text-emerald-300">
+              {accuracy.toFixed(1)}%
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              MAPE {mape.toFixed(1)}% · MAD {fmtInt(mad)} units over the last {cnt} periods
+            </p>
+          </div>
+          {blindAcc !== null && v && (
+            <div className="rounded-lg border border-white/10 bg-ink/40 p-3">
+              <p className="text-xs text-slate-300">
+                Strict blind holdout:{" "}
+                <span className="font-mono text-accent">{blindAcc.toFixed(1)}%</span>
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                Trained on {v.train_size} periods, then forecast the next {v.holdout}{" "}
+                fully blind (MAPE {v.mape}%).
+              </p>
+            </div>
+          )}
+          <p className="text-xs leading-relaxed text-slate-400">
+            Every number here is derived only from <strong>your</strong> uploaded sales —
+            no assumptions, no synthetic values. The accuracy is measured against the real
+            outcomes the model had not yet used, which is what makes the forward forecast
+            trustworthy.
+          </p>
+        </div>
+        <div className="lg:col-span-2">
+          <div className="h-56 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={rows} margin={{ top: 8, right: 12, left: -8, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" tickLine={false} minTickGap={24} />
+                <YAxis tickLine={false} width={48} />
+                <Tooltip
+                  contentStyle={{ background: "#0E1B2E", border: "1px solid rgba(255,255,255,0.12)" }}
+                  labelStyle={{ color: "#94a3b8" }}
+                  itemStyle={{ color: "#e2e8f0" }}
+                  formatter={(val: number) => fmtInt(val)}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="actual"
+                  name="Actual (real)"
+                  stroke="#16D6C9"
+                  strokeWidth={2.2}
+                  dot={{ r: 2, fill: "#16D6C9" }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="predicted"
+                  name="Forecast"
+                  stroke="#E879F9"
+                  strokeWidth={2.2}
+                  strokeDasharray="4 2"
+                  dot={{ r: 2, fill: "#E879F9" }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-slate-400">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-accent" /> Actual (your real data)
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#E879F9" }} />{" "}
+              Model forecast (from prior data only)
+            </span>
+          </div>
+        </div>
+      </div>
+    </Panel>
   );
 }

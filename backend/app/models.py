@@ -461,6 +461,8 @@ class SimulateResponse(BaseModel):
     forecast_fitted: List[float]
     forecast_horizon: List[float]
     forecast_labels: List[str] = Field(default_factory=list)
+    validation: Optional[ValidationModel] = None
+    fit_metrics: Optional[MetricsModel] = None
 
 
 class ScenarioComparison(BaseModel):
