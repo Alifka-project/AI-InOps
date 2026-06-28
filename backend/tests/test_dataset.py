@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+
 from core import data_generator as dg
 from core import dataset as ds
 from core import forecasting as fc
@@ -99,6 +100,58 @@ def test_backtest_is_out_of_sample():
     assert bt.holdout == 4
     assert bt.train_size == 20
     assert len(bt.predictions) == 4
+
+
+def test_match_kind_real_world_names():
+    cases = {
+        "Sales (Demand)": "sales",
+        "Suppliers": "suppliers",
+        "Transport Costs": "transport_costs",
+        "Transport Costs & Routes": "transport_costs",
+        "External Factors": "external",
+        "Inventory": "inventory",
+        "Orders": "orders",
+        "Warehouse Params": "warehouse_params",
+        "Transport History": "transport_history",
+        "Materials": "materials",
+        "Summary": None,
+        "historical_sales.csv": "sales",
+        "Vendor List": "suppliers",
+    }
+    for name, expected in cases.items():
+        assert ds.match_kind(name) == expected, (name, ds.match_kind(name))
+
+
+def test_build_from_excel_with_descriptive_sheet_names_and_extra_columns():
+    import io
+
+    import pandas as pd
+
+    frames = dg.sample_frames()
+    rename = {
+        "sales": "Sales (Demand)",
+        "suppliers": "Suppliers",
+        "transport_costs": "Transport Costs",
+        "external": "External Factors",
+        "inventory": "Inventory",
+        "orders": "Orders",
+        "warehouse_params": "Warehouse Params",
+        "transport_history": "Transport History",
+        "materials": "Materials",
+    }
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        pd.DataFrame({"note": ["ignore me"]}).to_excel(
+            w, sheet_name="Summary", index=False
+        )
+        for kind, df in frames.items():
+            extra = df.copy()
+            extra["extra_unused_column"] = 1  # rich real-world workbooks have extras
+            extra.to_excel(w, sheet_name=rename[kind][:31], index=False)
+    buf.seek(0)
+    built = ds.build_from_excel(buf.read(), name="Descriptive")
+    assert built["meta"]["n_periods"] == 36
+    assert built["meta"]["n_suppliers"] == 4
 
 
 def test_accessors():

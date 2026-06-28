@@ -49,7 +49,9 @@ def test_parse_combined_json_roundtrip(client):
 
 
 def test_parse_combined_bad_excel_returns_structured_error(client):
-    files = {"file": ("bad.xlsx", b"not really an excel file", "application/octet-stream")}
+    files = {
+        "file": ("bad.xlsx", b"not really an excel file", "application/octet-stream")
+    }
     r = client.post("/api/datasets/parse-combined", files=files)
     assert r.status_code == 200
     assert r.json()["ok"] is False

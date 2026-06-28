@@ -241,9 +241,41 @@ KIND_ALIASES.update(
 
 
 def match_kind(name: str) -> Optional[str]:
-    key = str(name).strip().lower().replace(" ", "_").replace("-", "_")
+    """Map a sheet/file name to a canonical input kind. Tries an exact alias
+    first, then keyword rules so real-world names like 'Sales (Demand)',
+    'Transport Costs & Routes', or 'historical_sales.csv' all resolve.
+    """
+    raw = str(name).strip().lower()
+    key = raw.replace(" ", "_").replace("-", "_")
     key = key.removesuffix(".csv")
-    return KIND_ALIASES.get(key)
+    if key in KIND_ALIASES:
+        return KIND_ALIASES[key]
+
+    k = raw  # keyword matching on the raw lowercased string
+    # Order matters: most specific rules first.
+    if "param" in k:
+        return "warehouse_params"
+    if "transport" in k and ("hist" in k or "shipment" in k):
+        return "transport_history"
+    if ("transport" in k or "freight" in k or "route" in k) and "cost" in k:
+        return "transport_costs"
+    if "history" in k or "shipment" in k:
+        return "transport_history"
+    if "cost" in k or "route" in k or "lane" in k:
+        return "transport_costs"
+    if "external" in k or "factor" in k:
+        return "external"
+    if "order" in k:
+        return "orders"
+    if "material" in k:
+        return "materials"
+    if "supplier" in k or "vendor" in k:
+        return "suppliers"
+    if "inventory" in k or "stock" in k or "warehouse" in k:
+        return "inventory"
+    if "sales" in k or "demand" in k:
+        return "sales"
+    return None
 
 
 def frames_from_excel(content: bytes) -> Dict[str, pd.DataFrame]:

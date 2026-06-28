@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+
 from core import data_generator as dg
 from core.scenarios import (
     HORMUZ_DISRUPTION,

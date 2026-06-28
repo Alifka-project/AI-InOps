@@ -12,8 +12,9 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from backend.app.main import app  # noqa: E402
-from core import data_generator as dg  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+
+from core import data_generator as dg  # noqa: E402
 
 
 @pytest.fixture(scope="session")
