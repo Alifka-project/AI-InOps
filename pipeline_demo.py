@@ -1,6 +1,7 @@
 import os
 import sys
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The verified engine now lives under backend/core. Put backend/ on the path.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend"))
 import numpy as np
 from core import data_generator as dg
 from core import forecasting as fc

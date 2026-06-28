@@ -1,5 +1,7 @@
 import os, sys, numpy as np
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The verified engine now lives under backend/core (so the backend deploys
+# self-contained). Put backend/ on the path so `import core` resolves.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend"))
 from scipy.optimize import linprog
 from core import forecasting as fc
 from core import transportation as tp

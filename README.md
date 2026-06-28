@@ -81,28 +81,31 @@ FastAPI (Python 3.11 · pydantic v2 · uvicorn)  ──▶  core/ engine (pure, 
 ### Repository layout
 
 ```
-digital-twin-logistics/
-├── core/                  # verified OR engine
-│   ├── dataset.py         # canonical schema, CSV parsing/validation (8 inputs)
-│   ├── forecasting.py     # ES / trend / seasonal + autotune + back-test
-│   ├── transportation.py  # NWC/LCM/VAM + Stepping-Stone/MODI (balanced/unbalanced)
-│   ├── supplier.py        # availability forecast from history
-│   ├── warehouse.py       # EOQ / ROP / safety stock from real params
-│   ├── scenarios.py       # Normal vs Hormuz-Disruption modifiers
-│   └── data_generator.py  # labelled SAMPLE dataset (only place synthetics live)
-├── backend/               # FastAPI app, tests, Dockerfile, render.yaml
-│   └── app/
-│       ├── models.py      # pydantic v2 schemas incl. the canonical Dataset
-│       ├── service.py     # stateless orchestration over core/
-│       ├── report.py      # reportlab PDF report
-│       └── routers/       # datasets · data · forecast · transport · warehouse · simulate · report
-├── frontend/              # Next.js dashboard
-│   ├── app/               # data · overview · forecasting · suppliers · transportation · warehouse · scenario
-│   ├── components/        # upload cards, KPI cards, charts, matrix editor, report button …
-│   ├── lib/               # api.ts · types.ts · inputs.ts · useApi · format
-│   └── store/             # Zustand (dataset + scenario + params, persisted)
+digital-twin-logistics/         # repo root = Vercel project root (./)
+├── vercel.json                 # multi-service manifest (frontend + backend)
+├── backend/                    # FastAPI service (deploys self-contained)
+│   ├── core/                   # verified OR engine (lives with the backend)
+│   │   ├── dataset.py          #   canonical schema, CSV parsing/validation (8 inputs)
+│   │   ├── forecasting.py      #   ES / trend / seasonal + autotune + back-test
+│   │   ├── transportation.py   #   NWC/LCM/VAM + Stepping-Stone/MODI (balanced/unbalanced)
+│   │   ├── supplier.py         #   availability forecast from history
+│   │   ├── warehouse.py        #   EOQ / ROP / safety stock from real params
+│   │   ├── scenarios.py        #   Normal vs Hormuz-Disruption modifiers
+│   │   └── data_generator.py   #   labelled SAMPLE dataset (only place synthetics live)
+│   ├── app/
+│   │   ├── models.py           # pydantic v2 schemas incl. the canonical Dataset
+│   │   ├── service.py          # stateless orchestration over core/
+│   │   ├── report.py           # reportlab PDF report
+│   │   └── routers/            # datasets · data · forecast · transport · warehouse · simulate · report
+│   ├── Procfile  runtime.txt  requirements.txt  Dockerfile  render.yaml
+│   └── tests/
+├── frontend/                   # Next.js dashboard
+│   ├── app/                    # data · overview · forecasting · suppliers · transportation · warehouse · scenario
+│   ├── components/             # upload cards, KPI cards, charts, matrix editor, report button …
+│   ├── lib/                    # api.ts · types.ts · inputs.ts · useApi · format
+│   └── store/                  # Zustand (dataset + scenario + params, persisted)
 ├── .github/workflows/ci.yml
-├── verify.py  pipeline_demo.py
+└── verify.py  pipeline_demo.py # frozen acceptance tests (engine)
 ```
 
 ---
@@ -153,7 +156,7 @@ npm run dev                  # http://localhost:3000
 ```bash
 # Backend
 cd backend
-ruff check app ../core/scenarios.py ../core/dataset.py
+ruff check app core/scenarios.py core/dataset.py
 black --check app
 python -m pytest             # dataset parsing, scenario math, accuracy, every endpoint, PDF
 
@@ -214,11 +217,12 @@ push/PR to `main`.
   routing (configurable via `PROXY_PREFIX`), so it works whether or not the
   platform strips it.
 - Backend start command: `backend/Procfile` (`uvicorn app.main:app …`), Python
-  pinned by `backend/runtime.txt`. The `core` engine is imported from the repo
-  root, which the monorepo deploy includes.
+  pinned by `backend/runtime.txt`. The `core` engine lives under `backend/core`,
+  so the backend service deploys fully self-contained.
 
-> If your platform reads the manifest under a different filename, copy
-> `deploy.json`'s contents there — the app code needs no change.
+> The manifest must be named **`vercel.json`** at the repo root (Vercel requires
+> it to deploy multiple services). `deploy.json` is kept as a copy for other
+> platforms.
 
 ### Alternative: split hosting (Render + Vercel)
 

@@ -11,8 +11,8 @@ WORKDIR /app
 COPY backend/requirements.txt ./requirements.txt
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Copy the verified engine and the API layer.
-COPY core ./core
+# Copy the verified engine and the API layer (core now lives under backend/).
+COPY backend/core ./core
 COPY backend/app ./app
 
 EXPOSE 8000
