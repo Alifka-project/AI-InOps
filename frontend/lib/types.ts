@@ -158,6 +158,7 @@ export interface ForecastResponse {
   seasonal: Series;
   seasonal_factors: number[];
   forecast_horizon: number[];
+  forecast_labels: string[];
   next_forecast: number;
   planning_demand_next: number;
   recovered_demand_multiplier: number;

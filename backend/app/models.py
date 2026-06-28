@@ -202,6 +202,7 @@ class ForecastResponse(BaseModel):
     seasonal: SeriesModel
     seasonal_factors: List[float]
     forecast_horizon: List[float]
+    forecast_labels: List[str] = Field(default_factory=list)
     next_forecast: float
     planning_demand_next: float
     recovered_demand_multiplier: float

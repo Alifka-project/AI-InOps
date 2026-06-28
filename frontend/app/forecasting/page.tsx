@@ -109,7 +109,7 @@ function ForecastingBody() {
     })) ?? [];
   const future =
     d?.forecast_horizon.map((v, k) => ({
-      month: `+${k + 1}`,
+      month: d.forecast_labels[k] ?? `+${k + 1}`,
       actual: null,
       adjusted: null,
       linear: null,

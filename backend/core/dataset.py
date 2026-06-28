@@ -653,6 +653,54 @@ def sales_labels(ds: dict) -> List[str]:
     return [r["label"] for r in ds["sales"]]
 
 
+_MONTHS = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+]
+
+
+def forecast_labels(labels: List[str], horizon: int) -> List[str]:
+    """Continue the time axis ``horizon`` steps past the history.
+
+    Real dates → the next dates at the inferred frequency; month names → the
+    next months in the cycle; otherwise a "+k" fallback.
+    """
+    # 1. Parseable dates with a consistent, strictly-increasing step.
+    try:
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # quiet the "could not infer format" note
+            dates = pd.to_datetime(labels, errors="raise")
+        s = pd.Series(dates)
+        if len(s) >= 3 and s.is_monotonic_increasing and s.nunique() == len(s):
+            step = s.diff().dropna().median()
+            last = s.iloc[-1]
+            return [
+                (last + step * (k + 1)).strftime("%Y-%m-%d") for k in range(horizon)
+            ]
+    except Exception:  # noqa: BLE001
+        pass
+
+    # 2. Month-name labels → continue the monthly cycle.
+    if labels and all(str(x)[:3].title() in _MONTHS for x in labels):
+        last_idx = _MONTHS.index(str(labels[-1])[:3].title())
+        return [_MONTHS[(last_idx + 1 + k) % 12] for k in range(horizon)]
+
+    # 3. Fallback.
+    return [f"+{k + 1}" for k in range(horizon)]
+
+
 def cost_matrix(ds: dict, prohibitive: float = 1_000_000.0) -> np.ndarray:
     """Dense cost matrix with missing routes set to ``prohibitive``."""
     raw = ds["transport_costs"]["matrix"]

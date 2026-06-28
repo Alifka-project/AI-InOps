@@ -187,6 +187,7 @@ def forecast_demand(
         },
         "seasonal_factors": [round(float(s), 3) for s in seas.seasonal_factors],
         "forecast_horizon": horizon_fc,
+        "forecast_labels": dsmod.forecast_labels(labels, horizon),
         "next_forecast": round(float(next_forecast), 2),
         "planning_demand_next": round(float(next_forecast) * mult * ext_factor, 2),
         "recovered_demand_multiplier": mult,
