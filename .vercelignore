@@ -1,0 +1,20 @@
+# Keep the deployed services lean. Runtime needs neither tests nor the dev-only
+# heavy libraries (scipy/statsmodels/scikit-learn live in requirements-dev.txt,
+# which Vercel must not install).
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+backend/tests/
+backend/requirements-dev.txt
+backend/Dockerfile
+backend/render.yaml
+
+.github/
+deploy.json
+*.log
