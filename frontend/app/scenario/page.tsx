@@ -52,6 +52,8 @@ function ScenarioBody() {
   const dataset = useScenarioStore((s) => s.dataset) as Dataset;
   const settings = useScenarioStore((s) => s.settings);
   const setScenario = useScenarioStore((s) => s.setScenario);
+  const scenario = useScenarioStore((s) => s.scenario);
+  const disrupted = scenario === "hormuz_disruption";
 
   const cmp = useApi(
     () => api.compareScenarios(dataset, settings),
@@ -69,20 +71,31 @@ function ScenarioBody() {
       />
 
       <div className="card card-pad">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-slate-300">
-            The disruption applies <strong>+12 day</strong> lead times, a <strong>×1.3</strong>{" "}
-            freight multiplier plus an <strong>$85/t</strong> war-risk surcharge, disables the first
-            direct route, and lifts recovered-material demand <strong>×1.25</strong>.
-          </p>
-          <div className="flex gap-2">
-            <button className="btn-ghost" onClick={() => setScenario("normal")}>
-              View Normal
-            </button>
-            <button className="btn-primary" onClick={() => setScenario("hormuz_disruption")}>
-              View Disruption
-            </button>
-          </div>
+        <p className="text-sm text-slate-300">
+          This page always compares <strong>both</strong> scenarios side by side. The
+          disruption applies <strong>+12 day</strong> lead times, a <strong>×1.3</strong>{" "}
+          freight multiplier plus an <strong>$85/t</strong> war-risk surcharge, disables the
+          first direct route, and lifts recovered-material demand <strong>×1.25</strong>{" "}
+          (or uses your file&apos;s pre/post-conflict columns when present). The column you
+          have <strong>active</strong> via the header toggle is highlighted below.
+        </p>
+        <div className="mt-3 inline-flex items-center rounded-lg border border-white/10 bg-white/5 p-1">
+          <button
+            onClick={() => setScenario("normal")}
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+              !disrupted ? "bg-accent text-navy-900" : "text-slate-300 hover:text-white"
+            }`}
+          >
+            Highlight Normal
+          </button>
+          <button
+            onClick={() => setScenario("hormuz_disruption")}
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+              disrupted ? "bg-rose-500 text-white" : "text-slate-300 hover:text-white"
+            }`}
+          >
+            Highlight Disruption
+          </button>
         </div>
       </div>
 
@@ -94,8 +107,12 @@ function ScenarioBody() {
                 <thead>
                   <tr>
                     <th>Metric</th>
-                    <th className="text-right">Normal</th>
-                    <th className="text-right">Disruption</th>
+                    <th className={`text-right ${!disrupted ? "text-accent" : ""}`}>
+                      Normal{!disrupted ? " ●" : ""}
+                    </th>
+                    <th className={`text-right ${disrupted ? "text-rose-300" : ""}`}>
+                      Disruption{disrupted ? " ●" : ""}
+                    </th>
                     <th className="text-right">Change</th>
                   </tr>
                 </thead>
@@ -106,8 +123,20 @@ function ScenarioBody() {
                     return (
                       <tr key={row.label}>
                         <td className="font-medium text-white">{row.label}</td>
-                        <td className="text-right font-mono text-slate-300">{row.format(nv)}</td>
-                        <td className="text-right font-mono text-white">{row.format(dv)}</td>
+                        <td
+                          className={`text-right font-mono ${
+                            !disrupted ? "bg-accent/5 text-accent" : "text-slate-300"
+                          }`}
+                        >
+                          {row.format(nv)}
+                        </td>
+                        <td
+                          className={`text-right font-mono ${
+                            disrupted ? "bg-rose-500/10 text-rose-200" : "text-white"
+                          }`}
+                        >
+                          {row.format(dv)}
+                        </td>
                         <td className="text-right">
                           <DeltaCell delta={deltaPct(dv, nv)} goodWhenUp={row.goodWhenUp} />
                         </td>
@@ -127,6 +156,7 @@ function ScenarioBody() {
             <SummaryCard
               title="Normal Operations"
               accent="accent"
+              active={!disrupted}
               cost={fmtUsdCompact(n.optimal_transport_cost)}
               value={fmtUsdCompact(n.recovered_material_value)}
               balanced={n.balanced}
@@ -134,6 +164,7 @@ function ScenarioBody() {
             <SummaryCard
               title="Hormuz Disruption"
               accent="rose"
+              active={disrupted}
               cost={fmtUsdCompact(d.optimal_transport_cost)}
               value={fmtUsdCompact(d.recovered_material_value)}
               balanced={d.balanced}
@@ -148,20 +179,32 @@ function ScenarioBody() {
 function SummaryCard({
   title,
   accent,
+  active,
   cost,
   value,
   balanced,
 }: {
   title: string;
   accent: "accent" | "rose";
+  active: boolean;
   cost: string;
   value: string;
   balanced: boolean;
 }) {
-  const ring = accent === "rose" ? "ring-1 ring-inset ring-rose-500/30" : "ring-1 ring-inset ring-accent/30";
+  const ring =
+    accent === "rose"
+      ? active
+        ? "ring-2 ring-inset ring-rose-500/60"
+        : "ring-1 ring-inset ring-rose-500/20 opacity-70"
+      : active
+        ? "ring-2 ring-inset ring-accent/60"
+        : "ring-1 ring-inset ring-accent/20 opacity-70";
   return (
     <div className={`card card-pad ${ring}`}>
-      <p className={`font-semibold ${accent === "rose" ? "text-rose-300" : "text-accent"}`}>{title}</p>
+      <p className={`font-semibold ${accent === "rose" ? "text-rose-300" : "text-accent"}`}>
+        {title}
+        {active && <span className="ml-2 text-xs font-normal">● active</span>}
+      </p>
       <div className="mt-3 grid grid-cols-2 gap-4">
         <div>
           <p className="label">Transport cost</p>

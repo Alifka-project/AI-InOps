@@ -199,12 +199,18 @@ export interface TransportComparisonRow {
   optimize: string;
   total_cost: number;
 }
+export interface InitialCostRow {
+  initial: string;
+  cost: number;
+}
 export interface TransportResponse {
   scenario: ScenarioInfo;
   method: string;
   allocation: number[][];
+  initial_allocation: number[][];
   cost_matrix: number[][];
   total_cost: number;
+  initial_cost: number;
   supply: number[];
   demand: number[];
   balanced: boolean;
@@ -212,6 +218,7 @@ export interface TransportResponse {
   row_labels: string[];
   col_labels: string[];
   comparison: TransportComparisonRow[];
+  initial_costs: InitialCostRow[];
   all_methods_agree: boolean;
 }
 

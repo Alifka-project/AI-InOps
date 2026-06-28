@@ -230,12 +230,27 @@ function TransportationBody() {
 
               {result && (
                 <div className="mt-2 space-y-3 rounded-lg border border-white/10 bg-ink/40 p-4">
-                  <div>
-                    <p className="label">Optimal total cost</p>
-                    <p className="text-2xl font-semibold text-accent">
-                      {result.total_cost.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-                    </p>
+                  <div className="flex items-end justify-between gap-3">
+                    <div>
+                      <p className="label">Initial ({initial.replace("_", " ")})</p>
+                      <p className="font-mono text-lg font-semibold text-slate-300">
+                        {result.initial_cost.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                      </p>
+                    </div>
+                    <span className="pb-1.5 text-slate-500">→</span>
+                    <div className="text-right">
+                      <p className="label">Optimal ({optimize.replace("_", " ")})</p>
+                      <p className="text-2xl font-semibold text-accent">
+                        {result.total_cost.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                      </p>
+                    </div>
                   </div>
+                  <p className="text-[11px] leading-relaxed text-slate-500">
+                    The initial method sets the starting allocation (its cost changes
+                    when you switch NWC / Least-Cost / Vogel); the optimality test then
+                    improves it. All paths converge to the same optimum — that&apos;s the
+                    proof of optimality.
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     <span
                       className={`chip ${

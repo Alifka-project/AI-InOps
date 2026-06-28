@@ -333,9 +333,29 @@ def optimize_transport(
         cost_arr, supply_arr, demand_arr, initial=initial, optimize=optimize
     )
 
+    # Initial (pre-optimisation) basic feasible solution for the chosen initial
+    # method — this DIFFERS by method (NWC vs Least-Cost vs Vogel), then the
+    # optimality test (MODI / Stepping-Stone) improves it to the same optimum.
+    c_bal, s_bal, d_bal, _, _ = tp.balance(cost_arr, supply_arr, demand_arr)
+    if initial == "nwc":
+        init_alloc = tp.northwest_corner(s_bal, d_bal)
+    else:
+        init_alloc = {"least_cost": tp.least_cost, "vogel": tp.vogel}[initial](
+            c_bal, s_bal, d_bal
+        )
+    initial_cost = round(tp.total_cost(init_alloc, c_bal), 2)
+
     comparison: List[dict] = []
+    init_costs: List[dict] = []
     totals: List[float] = []
     for init in INITIAL_METHODS:
+        c2, s2, d2, _, _ = tp.balance(cost_arr, supply_arr, demand_arr)
+        ia = (
+            tp.northwest_corner(s2, d2)
+            if init == "nwc"
+            else {"least_cost": tp.least_cost, "vogel": tp.vogel}[init](c2, s2, d2)
+        )
+        init_costs.append({"initial": init, "cost": round(tp.total_cost(ia, c2), 2)})
         for opt in OPTIMALITY_METHODS:
             s = tp.solve_transport(
                 cost_arr, supply_arr, demand_arr, initial=init, optimize=opt
@@ -360,8 +380,10 @@ def optimize_transport(
         "scenario": _scenario_info(scenario),
         "method": sol.method,
         "allocation": np.round(sol.allocation, 2).tolist(),
+        "initial_allocation": np.round(init_alloc, 2).tolist(),
         "cost_matrix": np.round(sol.cost_matrix, 2).tolist(),
         "total_cost": round(sol.total_cost, 2),
+        "initial_cost": initial_cost,
         "supply": np.round(sol.supply, 2).tolist(),
         "demand": np.round(sol.demand, 2).tolist(),
         "balanced": bool(sol.balanced),
@@ -369,6 +391,7 @@ def optimize_transport(
         "row_labels": rl,
         "col_labels": cl,
         "comparison": comparison,
+        "initial_costs": init_costs,
         "all_methods_agree": all_agree,
     }
 

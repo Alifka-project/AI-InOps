@@ -292,12 +292,19 @@ class TransportComparisonRow(BaseModel):
     total_cost: float
 
 
+class InitialCostRow(BaseModel):
+    initial: str
+    cost: float
+
+
 class TransportResponse(BaseModel):
     scenario: ScenarioInfo
     method: str
     allocation: List[List[float]]
+    initial_allocation: List[List[float]]
     cost_matrix: List[List[float]]
     total_cost: float
+    initial_cost: float
     supply: List[float]
     demand: List[float]
     balanced: bool
@@ -305,6 +312,7 @@ class TransportResponse(BaseModel):
     row_labels: List[str]
     col_labels: List[str]
     comparison: List[TransportComparisonRow]
+    initial_costs: List[InitialCostRow]
     all_methods_agree: bool
 
 
