@@ -128,10 +128,13 @@ def forecast_demand(
     beta: float,
     horizon: int,
     auto_tune: bool = False,
+    aggregate: str = "none",
 ) -> dict:
     scenario = get_scenario(scenario_name)
-    series = dsmod.sales_series(ds)
-    labels = dsmod.sales_labels(ds)
+    # Optionally roll daily data up to weekly/monthly totals so the horizon is
+    # expressed in those units (e.g. "12 periods" = 12 months).
+    labels, series_list, fc_labels = dsmod.aggregated_series(ds, aggregate, horizon)
+    series = np.array(series_list, dtype=float)
     n = len(series)
 
     tuning = None
@@ -187,7 +190,7 @@ def forecast_demand(
         },
         "seasonal_factors": [round(float(s), 3) for s in seas.seasonal_factors],
         "forecast_horizon": horizon_fc,
-        "forecast_labels": dsmod.forecast_labels(labels, horizon),
+        "forecast_labels": fc_labels,
         "next_forecast": round(float(next_forecast), 2),
         "planning_demand_next": round(float(next_forecast) * mult * ext_factor, 2),
         "recovered_demand_multiplier": mult,

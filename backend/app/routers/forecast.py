@@ -25,6 +25,7 @@ def forecast_demand(req: ForecastRequest) -> ForecastResponse:
             req.beta,
             req.horizon,
             auto_tune=req.auto_tune,
+            aggregate=req.aggregate.value,
         )
     )
 

@@ -169,7 +169,12 @@ export const api = {
       body: { dataset, scenario },
     }),
 
-  forecastDemand: (dataset: Dataset, scenario: ScenarioName, p: BaseParams) =>
+  forecastDemand: (
+    dataset: Dataset,
+    scenario: ScenarioName,
+    p: BaseParams,
+    aggregate: "none" | "weekly" | "monthly" = "none",
+  ) =>
     request<ForecastResponse>("/api/forecast/demand", {
       method: "POST",
       body: {
@@ -179,6 +184,7 @@ export const api = {
         beta: p.beta,
         horizon: p.horizon,
         auto_tune: p.autoTune,
+        aggregate,
       },
     }),
 

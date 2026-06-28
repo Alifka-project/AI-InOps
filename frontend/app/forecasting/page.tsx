@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Bar,
   BarChart,
@@ -76,14 +77,22 @@ function MetricsTable({ series }: { series: { key: string; s: Series }[] }) {
   );
 }
 
+type Granularity = "none" | "weekly" | "monthly";
+const GRANULARITIES: { value: Granularity; label: string }[] = [
+  { value: "none", label: "Per period" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+];
+
 function ForecastingBody() {
   const dataset = useScenarioStore((s) => s.dataset) as Dataset;
   const scenario = useScenarioStore((s) => s.scenario);
   const settings = useScenarioStore((s) => s.settings);
   const setSettings = useScenarioStore((s) => s.setSettings);
+  const [granularity, setGranularity] = useState<Granularity>("monthly");
 
   const fc = useApi(
-    () => api.forecastDemand(dataset, scenario, settings),
+    () => api.forecastDemand(dataset, scenario, settings, granularity),
     [
       dataset.meta.name,
       scenario,
@@ -91,6 +100,7 @@ function ForecastingBody() {
       settings.beta,
       settings.horizon,
       settings.autoTune,
+      granularity,
     ],
   );
 
@@ -163,6 +173,24 @@ function ForecastingBody() {
               onChange={(v) => setSettings({ beta: v, autoTune: false })}
               format={(v) => v.toFixed(2)}
             />
+            <div>
+              <p className="label mb-1.5">Granularity</p>
+              <div className="inline-flex w-full rounded-lg border border-white/10 bg-ink/40 p-1">
+                {GRANULARITIES.map((g) => (
+                  <button
+                    key={g.value}
+                    onClick={() => setGranularity(g.value)}
+                    className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition ${
+                      granularity === g.value
+                        ? "bg-accent text-navy-900"
+                        : "text-slate-300 hover:text-white"
+                    }`}
+                  >
+                    {g.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <Slider
               label="Forecast horizon"
               value={settings.horizon}
@@ -170,11 +198,19 @@ function ForecastingBody() {
               max={24}
               step={1}
               onChange={(v) => setSettings({ horizon: v })}
-              format={(v) => `${v} periods`}
+              format={(v) =>
+                granularity === "monthly"
+                  ? `${v} months`
+                  : granularity === "weekly"
+                    ? `${v} weeks`
+                    : `${v} periods`
+              }
             />
             <p className="-mt-2 text-[11px] text-slate-500">
-              Periods match your data&apos;s frequency. The forecast extends the
-              chart to the right of the marker.
+              {granularity === "none"
+                ? "Periods match your data's raw frequency."
+                : `Demand is rolled up to ${granularity} totals, so the horizon is in ${granularity === "monthly" ? "months" : "weeks"}.`}{" "}
+              The forecast extends past the marker.
             </p>
             {d && (
               <div className="space-y-3">

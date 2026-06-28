@@ -32,6 +32,12 @@ class OptimalityMethod(str, Enum):
     stepping_stone = "stepping_stone"
 
 
+class Aggregate(str, Enum):
+    none = "none"
+    weekly = "weekly"
+    monthly = "monthly"
+
+
 # --------------------------------------------------------------------------
 # Health / metadata
 # --------------------------------------------------------------------------
@@ -160,6 +166,7 @@ class ForecastRequest(BaseModel):
     beta: float = Field(0.3, ge=0.0, le=1.0)
     horizon: int = Field(6, ge=1, le=24)
     auto_tune: bool = False
+    aggregate: Aggregate = Aggregate.none
 
 
 class MetricsModel(BaseModel):

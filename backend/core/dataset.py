@@ -701,6 +701,47 @@ def forecast_labels(labels: List[str], horizon: int) -> List[str]:
     return [f"+{k + 1}" for k in range(horizon)]
 
 
+def aggregated_series(ds: dict, aggregate: str, horizon: int):
+    """Return (labels, values, forecast_labels) for forecasting, optionally
+    rolling the demand up to weekly or monthly totals.
+
+    Sub-monthly data (e.g. daily) can be summed into months so "12 periods"
+    means 12 months. Aggregation only applies when the sales labels are real,
+    strictly-increasing dates; otherwise the raw series is returned.
+    """
+    labels = sales_labels(ds)
+    values = sales_series(ds)
+    if aggregate not in ("weekly", "monthly"):
+        return list(labels), values.tolist(), forecast_labels(labels, horizon)
+
+    import warnings
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            idx = pd.to_datetime(labels, errors="raise")
+    except Exception:  # noqa: BLE001
+        return list(labels), values.tolist(), forecast_labels(labels, horizon)
+
+    s = pd.Series(values, index=idx)
+    if not (s.index.is_monotonic_increasing and s.index.is_unique):
+        s = s.sort_index()
+    if not s.index.is_unique:
+        return list(labels), values.tolist(), forecast_labels(labels, horizon)
+
+    freq = "W" if aggregate == "weekly" else "MS"
+    agg = s.resample(freq).sum()
+
+    def _fmt(d):
+        return d.strftime("%b %Y") if freq == "MS" else d.strftime("%Y-%m-%d")
+
+    hist_labels = [_fmt(d) for d in agg.index]
+    offset = pd.tseries.frequencies.to_offset(freq)
+    fwd = pd.date_range(agg.index[-1] + offset, periods=horizon, freq=freq)
+    fc_labels = [_fmt(d) for d in fwd]
+    return hist_labels, [float(v) for v in agg.values], fc_labels
+
+
 def cost_matrix(ds: dict, prohibitive: float = 1_000_000.0) -> np.ndarray:
     """Dense cost matrix with missing routes set to ``prohibitive``."""
     raw = ds["transport_costs"]["matrix"]
