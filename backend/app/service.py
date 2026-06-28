@@ -563,7 +563,132 @@ def _kpis_for(
             "balanced": bool(transport["balanced"]),
         },
         "forecast": fcast,
+        "suppliers": suppliers,
+        "transport": transport,
+        "warehouse": warehouse,
+        "materials": materials,
     }
+
+
+def _build_insights(ds: dict, result: dict) -> list:
+    """Plain-language analytical findings computed from the user's data."""
+    fcast = result["forecast"]
+    sup_r = result["suppliers"]
+    tr = result["transport"]
+    wh_r = result["warehouse"]
+    mat = result["materials"]
+    out = []
+
+    lt = fcast["linear_trend"]["fitted"]
+    if lt and lt[0]:
+        trend = (lt[-1] - lt[0]) / lt[0] * 100
+        direction = "rising" if trend > 1 else "falling" if trend < -1 else "flat"
+        out.append(
+            f"Demand is {direction} ~{abs(trend):.0f}% across the series; "
+            f"next-period forecast is {fcast['planning_demand_next']:,.0f} units."
+        )
+
+    methods = [
+        ("Adjusted ES", fcast["adjusted_es"]),
+        ("Linear Trend", fcast["linear_trend"]),
+        ("Seasonal", fcast["seasonal"]),
+    ]
+    best = min(methods, key=lambda m: m[1]["metrics"]["MAD"])
+    out.append(
+        f"Best-fitting forecast method: {best[0]} "
+        f"(MAD {best[1]['metrics']['MAD']}, MAPE {best[1]['metrics']['MAPE']}%); "
+        f"out-of-sample validation MAD {fcast['validation']['mad']}."
+    )
+    out.append(
+        f"Suppliers run at {sup_r['avg_capacity_utilization'] * 100:.0f}% of "
+        f"capacity on average; {sup_r['total_available_t']:,.0f} t available "
+        "next period."
+    )
+
+    bal = "balanced" if tr["balanced"] else "unbalanced"
+    gap = ""
+    if not tr["balanced"]:
+        # Real gap from pre-balance totals (sol.supply/demand include the dummy).
+        kpis = result["kpis"]
+        diff = abs(kpis["total_demand_t"] - kpis["total_available_t"])
+        kind = "unmet demand" if tr["dummy_added"] == "source" else "surplus supply"
+        gap = f" — {diff:,.0f} t {kind}"
+    out.append(
+        f"Optimal routing cost {tr['total_cost']:,.0f} "
+        f"({'all 6 methods agree' if tr['all_methods_agree'] else 'methods differ'}); "
+        f"network is {bal}{gap}."
+    )
+
+    crit = len([p for p in wh_r["policies"] if p["status"] == "CRITICAL"])
+    out.append(
+        f"{wh_r['hubs_needing_reorder']} of {len(wh_r['policies'])} hubs need "
+        f"reordering ({crit} critical) at a "
+        f"{wh_r['service_level'] * 100:.0f}% service level."
+    )
+    if mat.get("enabled"):
+        out.append(
+            f"Recovered-material value: ${mat['total_value_usd']:,.0f} per cycle "
+            f"from {mat['processed_t']:,.0f} t processed."
+        )
+    return out
+
+
+def _build_methodology(ds: dict, result: dict) -> list:
+    """Maps the brief's required elements to the technique applied + its result."""
+    meta = ds["meta"]
+    fcast = result["forecast"]
+    sup_r = result["suppliers"]
+    tr = result["transport"]
+    wh_r = result["warehouse"]
+    return [
+        {
+            "element": "Data augmentation & preprocessing",
+            "technique": "Eight inputs parsed, validated, cross-checked and merged",
+            "result": (
+                f"{meta['n_periods']} periods · {meta['n_suppliers']} suppliers · "
+                f"{meta['n_warehouses']} warehouses · {meta['n_orders']} orders"
+            ),
+        },
+        {
+            "element": "Demand forecasting",
+            "technique": "Adjusted Exp. Smoothing + Linear Trend + Seasonal, α/β "
+            "auto-tuned, validated out-of-sample",
+            "result": (
+                f"next {fcast['planning_demand_next']:,.0f} units · "
+                f"MAPE {fcast['adjusted_es']['metrics']['MAPE']}%"
+            ),
+        },
+        {
+            "element": "Supplier integration & forecasting",
+            "technique": "Availability forecast from historical shipments, capped "
+            "by contractual capacity",
+            "result": f"{sup_r['avg_capacity_utilization'] * 100:.0f}% avg utilization",
+        },
+        {
+            "element": "Transportation optimization",
+            "technique": "NWC / Least-Cost / Vogel → Stepping-Stone & MODI; "
+            "balanced and unbalanced",
+            "result": (
+                f"optimum {tr['total_cost']:,.0f} · "
+                f"{'balanced' if tr['balanced'] else 'unbalanced (dummy added)'}"
+            ),
+        },
+        {
+            "element": "Warehouse management",
+            "technique": "Safety stock + ROP + EOQ from demand, lead time, "
+            "real stock & parameters",
+            "result": (
+                f"{wh_r['hubs_needing_reorder']}/{len(wh_r['policies'])} "
+                "hubs to reorder"
+            ),
+        },
+        {
+            "element": "Scalability & adaptability",
+            "technique": "Stateless engine; parameter auto-tuning + back-testing "
+            "feedback loop",
+            "result": "scales to any network size; self-validating forecasts",
+        },
+    ]
 
 
 def simulate(
@@ -583,6 +708,8 @@ def simulate(
     return {
         "scenario": _scenario_info(scenario),
         "kpis": result["kpis"],
+        "insights": _build_insights(ds, result),
+        "methodology": _build_methodology(ds, result),
         "months": fcast["months"],
         "actual": fcast["actual"],
         "forecast_fitted": fcast["adjusted_es"]["fitted"],

@@ -122,6 +122,55 @@ function OverviewBody() {
         loading={sim.loading}
         error={sim.error}
         onRetry={sim.reload}
+        skeleton={<CardSkeleton height="h-40" />}
+      >
+        {sim.data && (
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <Panel
+              title="Analysis Summary"
+              description="Findings computed from your data for this scenario."
+            >
+              <ul className="space-y-2.5">
+                {sim.data.insights.map((line, i) => (
+                  <li key={i} className="flex gap-2.5 text-sm text-slate-200">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                    <span>{line}</span>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+
+            <Panel
+              title="Methodology — what the twin computed"
+              description="Each required element, the technique applied, and its result."
+            >
+              <div className="space-y-2.5">
+                {sim.data.methodology.map((m, i) => (
+                  <div
+                    key={i}
+                    className="rounded-lg border border-white/10 bg-ink/40 px-3 py-2.5"
+                  >
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-sm font-semibold text-white">
+                        {i + 1}. {m.element}
+                      </span>
+                      <span className="shrink-0 font-mono text-xs text-accent">
+                        {m.result}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-slate-400">{m.technique}</p>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          </div>
+        )}
+      </AsyncBoundary>
+
+      <AsyncBoundary
+        loading={sim.loading}
+        error={sim.error}
+        onRetry={sim.reload}
         skeleton={<CardSkeleton />}
       >
         <Panel

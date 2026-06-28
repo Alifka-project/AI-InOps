@@ -270,9 +270,16 @@ export interface Kpis {
   total_demand_t: number;
   balanced: boolean;
 }
+export interface MethodologyItem {
+  element: string;
+  technique: string;
+  result: string;
+}
 export interface SimulateResponse {
   scenario: ScenarioInfo;
   kpis: Kpis;
+  insights: string[];
+  methodology: MethodologyItem[];
   months: string[];
   actual: number[];
   forecast_fitted: number[];

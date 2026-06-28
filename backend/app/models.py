@@ -429,9 +429,17 @@ class KpiSet(BaseModel):
     balanced: bool
 
 
+class MethodologyItem(BaseModel):
+    element: str
+    technique: str
+    result: str
+
+
 class SimulateResponse(BaseModel):
     scenario: ScenarioInfo
     kpis: KpiSet
+    insights: List[str] = Field(default_factory=list)
+    methodology: List[MethodologyItem] = Field(default_factory=list)
     months: List[str]
     actual: List[float]
     forecast_fitted: List[float]
