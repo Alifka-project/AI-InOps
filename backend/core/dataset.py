@@ -155,19 +155,16 @@ def _normalise_headers(df: pd.DataFrame, kind: str) -> pd.DataFrame:
     return df
 
 
-def parse_csv(kind: str, content: str) -> pd.DataFrame:
-    """Parse raw CSV ``content`` for ``kind`` into a normalised DataFrame.
+def validate_frame(kind: str, df: pd.DataFrame) -> pd.DataFrame:
+    """Normalise headers, check required columns, and coerce numerics for a
+    DataFrame of ``kind`` (regardless of whether it came from CSV, Excel, etc.).
 
     Raises ``DatasetError`` with an actionable message on any problem.
     """
     if kind not in SCHEMAS:
         raise DatasetError(f"Unknown input type {kind!r}.")
-    try:
-        df = pd.read_csv(io.StringIO(content))
-    except Exception as exc:  # noqa: BLE001 - surface parse errors to the user
-        raise DatasetError(f"{kind}: could not parse CSV ({exc}).") from exc
-    if df.empty:
-        raise DatasetError(f"{kind}: file contains no rows.")
+    if df is None or df.empty:
+        raise DatasetError(f"{kind}: contains no rows.")
 
     df = _normalise_headers(df, kind)
 
@@ -193,6 +190,116 @@ def parse_csv(kind: str, content: str) -> pd.DataFrame:
                 )
 
     return df.reset_index(drop=True)
+
+
+def parse_csv(kind: str, content: str) -> pd.DataFrame:
+    """Parse raw CSV ``content`` for ``kind`` into a normalised DataFrame."""
+    if kind not in SCHEMAS:
+        raise DatasetError(f"Unknown input type {kind!r}.")
+    try:
+        df = pd.read_csv(io.StringIO(content))
+    except Exception as exc:  # noqa: BLE001 - surface parse errors to the user
+        raise DatasetError(f"{kind}: could not parse CSV ({exc}).") from exc
+    return validate_frame(kind, df)
+
+
+# --------------------------------------------------------------------------
+# Combined single-file inputs: Excel workbook, ZIP of CSVs, canonical JSON
+# --------------------------------------------------------------------------
+# Map a sheet/file name to a canonical input kind (case/separator-insensitive).
+KIND_ALIASES: Dict[str, str] = {}
+for _kind in list(SCHEMAS):
+    KIND_ALIASES[_kind] = _kind
+KIND_ALIASES.update(
+    {
+        "sales": "sales",
+        "historical_sales": "sales",
+        "demand": "sales",
+        "supplier": "suppliers",
+        "supplier_data": "suppliers",
+        "transport_cost": "transport_costs",
+        "transportation_costs": "transport_costs",
+        "costs": "transport_costs",
+        "routes": "transport_costs",
+        "external_factors": "external",
+        "external": "external",
+        "inventory_data": "inventory",
+        "stock": "inventory",
+        "warehouses": "inventory",
+        "customer_orders": "orders",
+        "order": "orders",
+        "warehouse_parameters": "warehouse_params",
+        "parameters": "warehouse_params",
+        "params": "warehouse_params",
+        "transport_history": "transport_history",
+        "transportation_history": "transport_history",
+        "history": "transport_history",
+        "material": "materials",
+        "materials_reference": "materials",
+    }
+)
+
+
+def match_kind(name: str) -> Optional[str]:
+    key = str(name).strip().lower().replace(" ", "_").replace("-", "_")
+    key = key.removesuffix(".csv")
+    return KIND_ALIASES.get(key)
+
+
+def frames_from_excel(content: bytes) -> Dict[str, pd.DataFrame]:
+    """Read an .xlsx workbook where each sheet is one input (sheet name matched
+    to a canonical kind)."""
+    try:
+        xls = pd.ExcelFile(io.BytesIO(content))
+    except Exception as exc:  # noqa: BLE001
+        raise DatasetError(f"Could not read Excel workbook ({exc}).") from exc
+    frames: Dict[str, pd.DataFrame] = {}
+    for sheet in xls.sheet_names:
+        kind = match_kind(sheet)
+        if not kind:
+            continue
+        df = xls.parse(sheet)
+        frames[kind] = validate_frame(kind, df)
+    if not frames:
+        raise DatasetError(
+            "No recognised sheets found. Name each sheet after an input "
+            f"(e.g. {', '.join(REQUIRED_INPUTS)})."
+        )
+    return frames
+
+
+def frames_from_zip(content: bytes) -> Dict[str, pd.DataFrame]:
+    """Read a .zip of CSVs where each file is named after a canonical kind."""
+    import zipfile
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(content))
+    except Exception as exc:  # noqa: BLE001
+        raise DatasetError(f"Could not read ZIP archive ({exc}).") from exc
+    frames: Dict[str, pd.DataFrame] = {}
+    for info in zf.infolist():
+        if info.is_dir():
+            continue
+        base = info.filename.rsplit("/", 1)[-1]
+        kind = match_kind(base)
+        if not kind:
+            continue
+        text = zf.read(info).decode("utf-8-sig")
+        frames[kind] = parse_csv(kind, text)
+    if not frames:
+        raise DatasetError(
+            "No recognised CSVs found in the ZIP. Name each file after an input "
+            f"(e.g. {', '.join(k + '.csv' for k in REQUIRED_INPUTS)})."
+        )
+    return frames
+
+
+def build_from_excel(content: bytes, name: str, is_sample: bool = False) -> dict:
+    return build_dataset(frames_from_excel(content), name=name, is_sample=is_sample)
+
+
+def build_from_zip(content: bytes, name: str, is_sample: bool = False) -> dict:
+    return build_dataset(frames_from_zip(content), name=name, is_sample=is_sample)
 
 
 def _series_label(row_period: int, label: Optional[str]) -> str:

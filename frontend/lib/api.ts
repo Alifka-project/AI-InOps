@@ -138,6 +138,30 @@ export const api = {
       `/api/datasets/templates/${kind}`,
     ),
 
+  // Upload ONE combined file (Excel workbook, ZIP of CSVs, or canonical JSON).
+  parseCombined: async (name: string, file: File): Promise<ValidationResponse> => {
+    const form = new FormData();
+    form.append("name", name);
+    form.append("file", file, file.name);
+    const res = await fetch(`${API_BASE}/api/datasets/parse-combined`, {
+      method: "POST",
+      body: form,
+      cache: "no-store",
+    });
+    if (!res.ok) throw await parseError(res);
+    return (await res.json()) as ValidationResponse;
+  },
+
+  // Download the combined template (xlsx workbook by default, or a zip).
+  downloadCombinedTemplate: async (format: "xlsx" | "zip" = "xlsx"): Promise<Blob> => {
+    const res = await fetch(
+      `${API_BASE}/api/datasets/template-combined?format=${format}`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) throw await parseError(res);
+    return res.blob();
+  },
+
   // ---- analysis (stateless: dataset travels in the body) ---------------
   getData: (dataset: Dataset, scenario: ScenarioName) =>
     request<DataResponse>("/api/data", {

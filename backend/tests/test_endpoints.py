@@ -2,11 +2,71 @@
 
 from __future__ import annotations
 
+import json
+
+from core import data_generator as dg
+
 
 def test_health(client):
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
+
+
+def test_parse_combined_excel(client):
+    xlsx = dg.sample_excel_bytes()
+    files = {
+        "file": (
+            "network.xlsx",
+            xlsx,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    }
+    r = client.post("/api/datasets/parse-combined", data={"name": "Combo"}, files=files)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["dataset"]["meta"]["name"] == "Combo"
+    assert body["dataset"]["meta"]["n_periods"] == 36
+    assert body["dataset"]["meta"]["is_sample"] is False
+
+
+def test_parse_combined_zip(client):
+    z = dg.sample_zip_bytes()
+    files = {"file": ("network.zip", z, "application/zip")}
+    r = client.post("/api/datasets/parse-combined", files=files)
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+
+def test_parse_combined_json_roundtrip(client):
+    ds = client.get("/api/datasets/sample").json()
+    blob = json.dumps(ds).encode()
+    files = {"file": ("network.json", blob, "application/json")}
+    r = client.post("/api/datasets/parse-combined", files=files)
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+
+def test_parse_combined_bad_excel_returns_structured_error(client):
+    files = {"file": ("bad.xlsx", b"not really an excel file", "application/octet-stream")}
+    r = client.post("/api/datasets/parse-combined", files=files)
+    assert r.status_code == 200
+    assert r.json()["ok"] is False
+    assert r.json()["errors"]
+
+
+def test_template_combined_xlsx(client):
+    r = client.get("/api/datasets/template-combined")
+    assert r.status_code == 200
+    assert "spreadsheetml" in r.headers["content-type"]
+    assert r.content[:2] == b"PK"  # xlsx is a zip container
+
+
+def test_template_combined_zip(client):
+    r = client.get("/api/datasets/template-combined", params={"format": "zip"})
+    assert r.status_code == 200
+    assert r.content[:2] == b"PK"
 
 
 def test_scenarios_metadata(client):

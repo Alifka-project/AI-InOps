@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import io
 from typing import Dict, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 
 from core import data_generator as dg
 from core import dataset as dsmod
@@ -77,10 +79,83 @@ async def parse_upload(
     )
 
 
+MAX_COMBINED_BYTES = 15 * 1024 * 1024  # 15 MB for a combined workbook/zip
+
+
+@router.post("/parse-combined", response_model=ValidationResponse)
+async def parse_combined(
+    name: str = Form("Uploaded dataset"),
+    file: UploadFile = File(...),
+) -> ValidationResponse:
+    """Parse a single combined file holding all inputs.
+
+    Accepts an Excel workbook (.xlsx — one sheet per input), a ZIP of CSVs
+    (one file per input), or a canonical dataset JSON (a previous export).
+    """
+    raw = await file.read()
+    if len(raw) > MAX_COMBINED_BYTES:
+        raise HTTPException(
+            status_code=413, detail=f"{file.filename}: file exceeds 15 MB limit."
+        )
+    fname = (file.filename or "").lower()
+
+    try:
+        if fname.endswith((".xlsx", ".xlsm", ".xls")):
+            ds = dsmod.build_from_excel(raw, name=name, is_sample=False)
+        elif fname.endswith(".zip"):
+            ds = dsmod.build_from_zip(raw, name=name, is_sample=False)
+        elif fname.endswith(".json"):
+            import json
+
+            try:
+                payload = json.loads(raw.decode("utf-8-sig"))
+            except Exception as exc:  # noqa: BLE001
+                return ValidationResponse(ok=False, errors=[f"Invalid JSON: {exc}"])
+            model = Dataset(**payload)  # pydantic validates the canonical shape
+            return ValidationResponse(
+                ok=True, dataset=model, warnings=model.meta.warnings
+            )
+        else:
+            # Try Excel first, then ZIP, as a best-effort fallback on odd names.
+            try:
+                ds = dsmod.build_from_excel(raw, name=name, is_sample=False)
+            except dsmod.DatasetError:
+                ds = dsmod.build_from_zip(raw, name=name, is_sample=False)
+    except dsmod.DatasetError as exc:
+        return ValidationResponse(ok=False, errors=[str(exc)])
+    except Exception as exc:  # noqa: BLE001
+        return ValidationResponse(
+            ok=False, errors=[f"Could not read {file.filename!r}: {exc}"]
+        )
+
+    return ValidationResponse(
+        ok=True, dataset=Dataset(**ds), warnings=ds["meta"]["warnings"]
+    )
+
+
 @router.get("/sample", response_model=Dataset)
 def sample_dataset() -> Dataset:
     """The clearly-labelled synthetic SAMPLE dataset (for demo/testing only)."""
     return Dataset(**dg.sample_dataset())
+
+
+@router.get("/template-combined")
+def template_combined(format: str = "xlsx") -> StreamingResponse:
+    """Download a single combined template pre-filled with the sample data:
+    an Excel workbook (default) or a ZIP of CSVs."""
+    if format == "zip":
+        data = dg.sample_zip_bytes()
+        media = "application/zip"
+        filename = "digital-twin-template.zip"
+    else:
+        data = dg.sample_excel_bytes()
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = "digital-twin-template.xlsx"
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/templates/{kind}")

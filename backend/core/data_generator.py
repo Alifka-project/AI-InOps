@@ -16,6 +16,7 @@ Entities
 """
 
 from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 
@@ -312,6 +313,51 @@ def sample_csv_texts(seed: int = RNG_SEED) -> dict:
     """Return {input_kind: csv_text} for the sample dataset (for templates/tests)."""
     frames = sample_frames(seed)
     return {k: v.to_csv(index=False) for k, v in frames.items()}
+
+
+# Order the sheets the way the brief lists the inputs.
+_SHEET_ORDER = [
+    "sales",
+    "suppliers",
+    "transport_costs",
+    "external",
+    "inventory",
+    "orders",
+    "warehouse_params",
+    "transport_history",
+    "materials",
+]
+
+
+def sample_excel_bytes(seed: int = RNG_SEED) -> bytes:
+    """Return a single .xlsx workbook with one sheet per input, filled with the
+    sample data — the combined-upload template."""
+    import io
+
+    frames = sample_frames(seed)
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        for kind in _SHEET_ORDER:
+            if kind in frames:
+                # Excel sheet names are capped at 31 chars.
+                frames[kind].to_excel(writer, sheet_name=kind[:31], index=False)
+    buf.seek(0)
+    return buf.read()
+
+
+def sample_zip_bytes(seed: int = RNG_SEED) -> bytes:
+    """Return a .zip of the sample CSVs (one file per input)."""
+    import io
+    import zipfile
+
+    texts = sample_csv_texts(seed)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for kind in _SHEET_ORDER:
+            if kind in texts:
+                zf.writestr(f"{kind}.csv", texts[kind])
+    buf.seek(0)
+    return buf.read()
 
 
 if __name__ == "__main__":

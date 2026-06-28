@@ -112,10 +112,12 @@ digital-twin-logistics/         # repo root = Vercel project root (./)
 
 ## Using the app
 
-1. Open **Data & Upload**. Either:
-   - **Upload** all eight CSVs (download a template per input for the exact
-     columns), name the dataset, and click **Validate & load**; or
-   - click **Load sample dataset** to explore with labelled synthetic data.
+1. Open **Data & Upload**. Choose any of:
+   - **Upload everything in one file** — a single Excel workbook (one sheet per
+     input), a ZIP of CSVs, or a previously exported JSON. Download the combined
+     **Excel/ZIP template** (pre-filled with the sample) to see the exact format;
+   - **Upload each input separately** — the eight CSVs, with a per-input template;
+   - **Load sample dataset** to explore with labelled synthetic data.
 2. Every page (Overview, Forecasting, Suppliers, Transportation, Warehouse,
    Scenario) now analyses that dataset. Flip the **Scenario** toggle to see the
    Hormuz-disruption impact ripple through.

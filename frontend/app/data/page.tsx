@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { INPUT_DEFS } from "@/lib/inputs";
@@ -11,6 +11,7 @@ import { UploadCard } from "@/components/UploadCard";
 import type { Dataset } from "@/lib/types";
 
 type FileMap = Record<string, File | null>;
+type Busy = "upload" | "sample" | "combined" | "template" | null;
 
 export default function DataPage() {
   const router = useRouter();
@@ -20,9 +21,10 @@ export default function DataPage() {
 
   const [name, setName] = useState("My logistics network");
   const [files, setFiles] = useState<FileMap>({});
-  const [busy, setBusy] = useState<"upload" | "sample" | null>(null);
+  const [busy, setBusy] = useState<Busy>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const combinedRef = useRef<HTMLInputElement>(null);
 
   const requiredKinds = INPUT_DEFS.filter((d) => d.required).map((d) => d.kind);
   const haveRequired = requiredKinds.every((k) => files[k]);
@@ -67,6 +69,47 @@ export default function DataPage() {
       router.push("/overview");
     } catch (err) {
       setErrors([err instanceof ApiError ? err.message : "Could not load sample."]);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onCombinedFile = async (file: File | null) => {
+    if (!file) return;
+    setBusy("combined");
+    setErrors([]);
+    setWarnings([]);
+    try {
+      const res = await api.parseCombined(name, file);
+      if (res.ok && res.dataset) {
+        loadDataset(res.dataset);
+        router.push("/overview");
+      } else {
+        setErrors(res.errors.length ? res.errors : ["Could not read the file."]);
+        setWarnings(res.warnings ?? []);
+      }
+    } catch (err) {
+      setErrors([err instanceof ApiError ? err.message : "Upload failed."]);
+    } finally {
+      setBusy(null);
+      if (combinedRef.current) combinedRef.current.value = "";
+    }
+  };
+
+  const onDownloadTemplate = async (format: "xlsx" | "zip") => {
+    setBusy("template");
+    try {
+      const blob = await api.downloadCombinedTemplate(format);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `digital-twin-template.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setErrors([err instanceof ApiError ? err.message : "Template download failed."]);
     } finally {
       setBusy(null);
     }
@@ -147,22 +190,72 @@ export default function DataPage() {
         </div>
       )}
 
+      <div className="mb-1 max-w-md">
+        <label htmlFor="ds-name" className="label">
+          Dataset name
+        </label>
+        <input
+          id="ds-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="mt-1.5 w-full rounded-lg border border-white/10 bg-ink/60 px-3 py-2 text-sm text-white focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/40"
+        />
+      </div>
+
       <Panel
-        title="Upload your data"
+        title="Upload everything in one file"
+        description="The simplest option: one Excel workbook (a sheet per input), a ZIP of CSVs, or a previously exported JSON."
+      >
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              ref={combinedRef}
+              type="file"
+              accept=".xlsx,.xls,.zip,.json"
+              className="hidden"
+              aria-label="Upload combined dataset file"
+              onChange={(e) => onCombinedFile(e.target.files?.[0] ?? null)}
+            />
+            <button
+              className="btn-primary"
+              disabled={busy !== null}
+              onClick={() => combinedRef.current?.click()}
+            >
+              {busy === "combined" ? "Validating…" : "Choose combined file"}
+            </button>
+            <span className="text-xs text-slate-400">.xlsx · .zip · .json</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-slate-400">Need the format?</span>
+            <button
+              className="btn-ghost py-1.5 text-xs"
+              disabled={busy !== null}
+              onClick={() => onDownloadTemplate("xlsx")}
+            >
+              {busy === "template" ? "…" : "Excel template"}
+            </button>
+            <button
+              className="btn-ghost py-1.5 text-xs"
+              disabled={busy !== null}
+              onClick={() => onDownloadTemplate("zip")}
+            >
+              ZIP template
+            </button>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          The Excel template has one sheet per input (sales, suppliers,
+          transport_costs, external, inventory, orders, warehouse_params,
+          transport_history, materials), pre-filled with the sample so you can
+          see the exact columns. Replace the rows with your data and upload it
+          here.
+        </p>
+      </Panel>
+
+      <Panel
+        title="Or upload each input separately"
         description="CSV files with flexible headers. Download a template for the exact columns. Drag a file onto a card or click Choose CSV."
       >
-        <div className="mb-5 max-w-md">
-          <label htmlFor="ds-name" className="label">
-            Dataset name
-          </label>
-          <input
-            id="ds-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="mt-1.5 w-full rounded-lg border border-white/10 bg-ink/60 px-3 py-2 text-sm text-white focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/40"
-          />
-        </div>
-
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {INPUT_DEFS.map((def) => (
             <UploadCard
