@@ -308,7 +308,7 @@ class TransportResponse(BaseModel):
     supply: List[float]
     demand: List[float]
     balanced: bool
-    dummy_added: str
+    balancing_added: str
     row_labels: List[str]
     col_labels: List[str]
     comparison: List[TransportComparisonRow]

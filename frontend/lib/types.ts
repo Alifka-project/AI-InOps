@@ -214,7 +214,7 @@ export interface TransportResponse {
   supply: number[];
   demand: number[];
   balanced: boolean;
-  dummy_added: string;
+  balancing_added: string;
   row_labels: string[];
   col_labels: string[];
   comparison: TransportComparisonRow[];

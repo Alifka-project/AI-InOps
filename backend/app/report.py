@@ -295,10 +295,10 @@ def build_report(
             f"{'balanced' if transport['balanced'] else 'unbalanced'}"
             + (
                 " — supply cannot meet demand (unmet demand)."
-                if transport["dummy_added"] == "source"
+                if transport["balancing_added"] == "source"
                 else (
                     " — supply exceeds demand (surplus supply)."
-                    if transport["dummy_added"] == "destination"
+                    if transport["balancing_added"] == "destination"
                     else "."
                 )
             ),

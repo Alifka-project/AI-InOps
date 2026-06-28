@@ -366,14 +366,15 @@ def optimize_transport(
             totals.append(round(s.total_cost))
     all_agree = len(set(totals)) == 1
 
-    # The balancing "dummy" row/column is a standard transportation-problem
-    # device, not fabricated data: a source dummy carries demand that supply
-    # cannot meet (unmet demand); a destination dummy carries supply left unused.
+    # The balancing row/column is a standard transportation-method device, not
+    # fabricated data: a source-side balance carries demand that supply cannot
+    # meet (unmet demand); a destination-side balance carries unused supply.
+    balancing = sol.dummy_added  # "" | "source" | "destination" (engine term)
     rl = list(row_labels)
     cl = list(col_labels)
-    if sol.dummy_added == "source" and len(rl) < sol.allocation.shape[0]:
+    if balancing == "source" and len(rl) < sol.allocation.shape[0]:
         rl.append("Unmet demand (no supply)")
-    if sol.dummy_added == "destination" and len(cl) < sol.allocation.shape[1]:
+    if balancing == "destination" and len(cl) < sol.allocation.shape[1]:
         cl.append("Surplus supply (unused)")
 
     return {
@@ -387,7 +388,7 @@ def optimize_transport(
         "supply": np.round(sol.supply, 2).tolist(),
         "demand": np.round(sol.demand, 2).tolist(),
         "balanced": bool(sol.balanced),
-        "dummy_added": sol.dummy_added,
+        "balancing_added": balancing,
         "row_labels": rl,
         "col_labels": cl,
         "comparison": comparison,
@@ -636,10 +637,10 @@ def _build_insights(ds: dict, result: dict) -> list:
     bal = "balanced" if tr["balanced"] else "unbalanced"
     gap = ""
     if not tr["balanced"]:
-        # Real gap from pre-balance totals (sol.supply/demand include the dummy).
+        # Real gap from pre-balance totals (the solver's supply/demand are padded).
         kpis = result["kpis"]
         diff = abs(kpis["total_demand_t"] - kpis["total_available_t"])
-        kind = "unmet demand" if tr["dummy_added"] == "source" else "surplus supply"
+        kind = "unmet demand" if tr["balancing_added"] == "source" else "surplus supply"
         gap = f" — {diff:,.0f} t {kind}"
     out.append(
         f"Optimal routing cost {tr['total_cost']:,.0f} "
@@ -698,7 +699,7 @@ def _build_methodology(ds: dict, result: dict) -> list:
             "balanced and unbalanced",
             "result": (
                 f"optimum {tr['total_cost']:,.0f} · "
-                f"{'balanced' if tr['balanced'] else 'unbalanced (dummy added)'}"
+                f"{'balanced' if tr['balanced'] else 'unbalanced (supply shortfall)'}"
             ),
         },
         {

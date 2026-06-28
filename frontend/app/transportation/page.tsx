@@ -104,10 +104,10 @@ function TransportationBody() {
   // Real shortfall/surplus tonnage = the balancing row/column's allocation total.
   let shortfall = 0;
   if (result) {
-    if (result.dummy_added === "source") {
+    if (result.balancing_added === "source") {
       const last = result.allocation[result.allocation.length - 1] ?? [];
       shortfall = last.reduce((a, b) => a + b, 0);
-    } else if (result.dummy_added === "destination") {
+    } else if (result.balancing_added === "destination") {
       shortfall = result.allocation.reduce(
         (s, row) => s + (row[row.length - 1] ?? 0),
         0,
@@ -261,12 +261,12 @@ function TransportationBody() {
                     >
                       {result.balanced ? "Balanced" : "Unbalanced"}
                     </span>
-                    {result.dummy_added === "source" && (
+                    {result.balancing_added === "source" && (
                       <span className="chip bg-rose-500/15 text-rose-300">
                         {fmtNum(shortfall)} t unmet demand
                       </span>
                     )}
-                    {result.dummy_added === "destination" && (
+                    {result.balancing_added === "destination" && (
                       <span className="chip bg-electric/15 text-electric">
                         {fmtNum(shortfall)} t surplus supply
                       </span>
