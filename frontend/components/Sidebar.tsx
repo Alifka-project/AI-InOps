@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV_ITEMS } from "@/lib/nav";
 import { Icon } from "./Icon";
+import { Logo } from "./Logo";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -11,9 +12,7 @@ export function Sidebar() {
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-white/5 bg-navy-900/80 backdrop-blur lg:flex">
       <div className="flex items-center gap-3 px-5 py-5">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-navy-900">
-          <span className="text-lg font-bold">E</span>
-        </div>
+        <Logo className="h-10 w-10 shrink-0" />
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-white">Digital Twin</p>
           <p className="truncate text-xs text-slate-400">Electrolux UAE Ops</p>
